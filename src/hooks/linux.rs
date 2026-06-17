@@ -3,9 +3,7 @@
 //! Uses XCB for X11 keystroke capture. Requires X11 server running.
 
 #[cfg(target_os = "linux")]
-use super::{
-    ControlKey, HookConfig, HookError, HookEvent, KeyEvent, KeyboardHook, Modifiers, SpecialKey,
-};
+use super::{HookConfig, HookError, HookEvent, KeyboardHook, Modifiers, SpecialKey};
 #[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "linux")]
@@ -107,12 +105,6 @@ impl LinuxHook {
             _ => None,
         }
     }
-
-    /// Get modifier state from XCB
-    fn get_xcb_modifiers(event: &xcb::xkb::BellEvent) -> Modifiers {
-        // Simplified - would need proper XKB state lookup
-        Modifiers::default()
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -147,13 +139,13 @@ impl KeyboardHook for LinuxHook {
             // 5. Ungrab on stop
 
             // For this implementation, we check for DISPLAY and attempt connection
-            let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
+            let display_env = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
 
-            if let Ok(conn) = xcb::Connection::connect(Some(&display)) {
+            if let Ok(conn) = xcb::Connection::connect(Some(&display_env)) {
                 let (conn, screen_num) = conn;
                 tracing::info!(
                     "Connected to X server on {}, screen {}",
-                    display,
+                    display_env,
                     screen_num
                 );
 
@@ -175,7 +167,7 @@ impl KeyboardHook for LinuxHook {
 
                 while !stop_flag.load(Ordering::SeqCst) {
                     // Poll for events
-                    if let Some(event) = conn.poll_for_event() {
+                    if let Ok(Some(event)) = conn.poll_for_event() {
                         let timestamp = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_millis() as u64)
@@ -183,8 +175,8 @@ impl KeyboardHook for LinuxHook {
 
                         let event_type = event.response_type() & 0x7f;
 
-                        // Key press events are 2, Key release are 3
-                        if event_type == xcb::KEY_PRESS || event_type == xcb::KEY_RELEASE {
+                        // KeyPress = 2, KeyRelease = 3 (X protocol constants)
+                        if event_type == 2 || event_type == 3 {
                             if log_keystrokes {
                                 tracing::debug!("XCB KeyEvent: {:?}", event);
                             }
@@ -232,7 +224,13 @@ impl KeyboardHook for LinuxHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        panic!("receiver() called on LinuxHook - not implemented in this skeleton")
+        #[expect(
+            clippy::panic,
+            reason = "stub: skeleton does not yet implement event receiver; remove when implemented"
+        )]
+        {
+            panic!("receiver() called on LinuxHook - not implemented in this skeleton")
+        }
     }
 }
 
@@ -276,6 +274,12 @@ impl KeyboardHook for LinuxHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        panic!("receiver() called on stub LinuxHook")
+        #[expect(
+            clippy::panic,
+            reason = "stub implementation for non-Linux builds; never actually called"
+        )]
+        {
+            panic!("receiver() called on stub LinuxHook")
+        }
     }
 }

@@ -3,9 +3,7 @@
 //! Uses CGEventTap for keystroke capture. Requires Accessibility permissions.
 
 #[cfg(target_os = "macos")]
-use super::{
-    ControlKey, HookConfig, HookError, HookEvent, KeyEvent, KeyboardHook, Modifiers, SpecialKey,
-};
+use super::{HookConfig, HookError, HookEvent, KeyboardHook, Modifiers, SpecialKey};
 #[cfg(target_os = "macos")]
 use core_graphics::base::CGFloat;
 #[cfg(target_os = "macos")]
@@ -288,7 +286,13 @@ impl KeyboardHook for MacOSHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        panic!("receiver() called on MacOSHook - not implemented in this skeleton")
+        #[expect(
+            clippy::panic,
+            reason = "stub: skeleton does not yet implement event receiver; remove when implemented"
+        )]
+        {
+            panic!("receiver() called on MacOSHook - not implemented in this skeleton")
+        }
     }
 }
 
@@ -332,6 +336,12 @@ impl KeyboardHook for MacOSHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        panic!("receiver() called on stub MacOSHook")
+        #[expect(
+            clippy::panic,
+            reason = "stub implementation for non-macOS builds; never actually called"
+        )]
+        {
+            panic!("receiver() called on stub MacOSHook")
+        }
     }
 }

@@ -6,7 +6,6 @@ rust-version = "1.81"
 authors = ["Kiroku Solutions <opensource@kiroku.solutions>"]
 description = "Hyper-lightweight, zero-latency typo correction and language detection engine"
 license = "MIT OR Apache-2.0"
-license-file = "LICENSE"
 repository = "https://github.com/kiroku-solutions/typefix"
 homepage = "https://github.com/kiroku-solutions/typefix"
 documentation = "https://docs.rs/typefix"
@@ -87,6 +86,3 @@ panic = "abort"
 
 [profile.dev]
 opt-level = 0
-
-[profile.dev.release]
-opt-level = 3
