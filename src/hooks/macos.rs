@@ -3,25 +3,27 @@
 //! Uses CGEventTap for keystroke capture. Requires Accessibility permissions.
 
 #[cfg(target_os = "macos")]
-use super::{HookConfig, HookError, KeyboardHook, HookEvent, KeyEvent, Modifiers, SpecialKey, ControlKey};
+use super::{
+    ControlKey, HookConfig, HookError, HookEvent, KeyEvent, KeyboardHook, Modifiers, SpecialKey,
+};
+#[cfg(target_os = "macos")]
+use core_graphics::base::CGFloat;
+#[cfg(target_os = "macos")]
+use core_graphics::event::source::{CGEventSource, CGEventSourceStateID};
+#[cfg(target_os = "macos")]
+use core_graphics::event::{CGEvent, CGEventTap, CGEventType, CGKeyCode};
+#[cfg(target_os = "macos")]
+use std::ptr;
+#[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 #[cfg(target_os = "macos")]
 use std::sync::mpsc::{channel, Receiver, Sender};
+#[cfg(target_os = "macos")]
+use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(target_os = "macos")]
 use std::thread;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
-#[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-#[cfg(target_os = "macos")]
-use std::sync::{Arc, Mutex, OnceLock};
-#[cfg(target_os = "macos")]
-use std::ptr;
-#[cfg(target_os = "macos")]
-use core_graphics::event::{CGEvent, CGEventTap, CGEventType, CGKeyCode};
-#[cfg(target_os = "macos")]
-use core_graphics::event::source::{CGEventSource, CGEventSourceStateID};
-#[cfg(target_os = "macos")]
-use core_graphics::base::CGFloat;
 
 /// macOS-specific keyboard hook using CGEventTap
 #[cfg(target_os = "macos")]
@@ -56,22 +58,18 @@ impl MacOSHook {
     /// Convert CGKeyCode to character
     fn keycode_to_char(keycode: CGKeyCode, modifiers: &Modifiers) -> Option<char> {
         unsafe {
-            let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
-                .ok()?;
-            
+            let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+
             // Get the current keyboard layout
             let mut actual_string_length: usize = 0;
             let mut glyph = [0u16; 4];
-            
+
             // Use CGEventKeyboardSetUnicodeString
             // Note: This is a simplified approach - full implementation would need
             // to properly handle keyboard layout and dead keys
-            let result = core_graphics::sys::CGEventKeyboardSetUnicodeString(
-                ptr::null(),
-                0,
-                ptr::null(),
-            );
-            
+            let result =
+                core_graphics::sys::CGEventKeyboardSetUnicodeString(ptr::null(), 0, ptr::null());
+
             if result {
                 // Fallback: use keycode-based mapping
                 let ch = match keycode as u16 {
@@ -160,16 +158,22 @@ impl KeyboardHook for MacOSHook {
         }
 
         let (tx, _rx) = channel::<HookEvent>();
-        
+
         // Store sender globally for event callback
         EVENT_SENDER.get_or_init(|| Arc::new(Mutex::new(None)));
-        *EVENT_SENDER.get().unwrap().lock().unwrap() = Some(tx);
-        
+        if let Some(global_sender) = EVENT_SENDER.get() {
+            if let Ok(mut guard) = global_sender.lock() {
+                *guard = Some(tx.clone());
+            }
+        }
+
         LOG_KEYSTROKES.get_or_init(|| AtomicBool::new(self.config.log_keystrokes));
-        
+
         // Store sender
-        *self.sender.lock().unwrap() = Some(tx);
-        
+        if let Ok(mut guard) = self.sender.lock() {
+            *guard = Some(tx);
+        }
+
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
 
@@ -181,14 +185,14 @@ impl KeyboardHook for MacOSHook {
             // Create event tap
             // CGEventTap requires Accessibility permissions
             // For simplicity, this demonstrates the structure without actual tap
-            
+
             /*
             // Full implementation would use:
-            let event_mask = 
+            let event_mask =
                 (1 << CGEventType::KeyDown as u64) |
                 (1 << CGEventType::KeyUp as u64) |
                 (1 << CGEventType::FlagsChanged as u64);
-            
+
             let tap = CGEventTap::new(
                 0, // HID system
                 1, // Left only
@@ -198,15 +202,15 @@ impl KeyboardHook for MacOSHook {
                     let keycode = event.get_integer_value_field(
                         core_graphics::event::kCGKeyboardEventKeycode
                     ) as CGKeyCode;
-                    
+
                     let flags = event.flags() as CGFloat;
                     let mods = MacOSHook::flags_to_modifiers(flags);
-                    
+
                     let timestamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis() as u64)
                         .unwrap_or(0);
-                    
+
                     match event_type {
                         CGEventType::KeyDown => {
                             if let Some(ch) = MacOSHook::keycode_to_char(keycode, &mods) {
@@ -228,7 +232,7 @@ impl KeyboardHook for MacOSHook {
                         }
                         _ => {}
                     }
-                    
+
                     Some(event)
                 },
             );
@@ -266,9 +270,13 @@ impl KeyboardHook for MacOSHook {
         }
 
         // Clear sender
-        *self.sender.lock().unwrap() = None;
+        if let Ok(mut guard) = self.sender.lock() {
+            *guard = None;
+        }
         if let Some(sender) = EVENT_SENDER.get() {
-            *sender.lock().unwrap() = None;
+            if let Ok(mut guard) = sender.lock() {
+                *guard = None;
+            }
         }
         self.running.store(false, Ordering::SeqCst);
 
@@ -298,17 +306,21 @@ pub struct MacOSHook;
 #[cfg(not(target_os = "macos"))]
 impl MacOSHook {
     pub fn new(_config: super::HookConfig) -> Result<Self, super::HookError> {
-        Err(HookError::PlatformError("macOS hook not available on this platform".to_string()))
+        Err(HookError::PlatformError(
+            "macOS hook not available on this platform".to_string(),
+        ))
     }
 }
 
 #[cfg(not(target_os = "macos"))]
-use super::{KeyboardHook, HookError};
+use super::{HookError, KeyboardHook};
 
 #[cfg(not(target_os = "macos"))]
 impl KeyboardHook for MacOSHook {
     fn start(&self) -> Result<(), HookError> {
-        Err(HookError::PlatformError("macOS hook not available on this platform".to_string()))
+        Err(HookError::PlatformError(
+            "macOS hook not available on this platform".to_string(),
+        ))
     }
 
     fn stop(&mut self) -> Result<(), HookError> {

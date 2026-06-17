@@ -1,4 +1,4 @@
-﻿//! Trie data structure for efficient word lookups and prefix searches
+//! Trie data structure for efficient word lookups and prefix searches
 //!
 //! This implementation is immutable after construction, supporting concurrent
 //! reads via Arc/RwLock at the engine level.
@@ -18,10 +18,18 @@ struct TrieNode {
 }
 
 impl TrieNode {
+    #[allow(
+        dead_code,
+        reason = "constructor reserved for future trie builders, used in tests"
+    )]
     fn new() -> Self {
         Self::default()
     }
 
+    #[allow(
+        dead_code,
+        reason = "constructor used in tests for pre-populated trie nodes"
+    )]
     fn with_word(word: String, frequency: u64) -> Self {
         let mut node = Self::new();
         node.is_end = true;
@@ -68,11 +76,11 @@ impl Trie {
     pub fn insert(&mut self, word: &str, frequency: u64) {
         let mut current = &mut self.root;
         for ch in word.chars() {
-            current
-                .children
-                .entry(ch)
-                .or_insert_with(TrieNode::new);
-            current = current.children.get_mut(&ch).unwrap();
+            current.children.entry(ch).or_default();
+            match current.children.get_mut(&ch) {
+                Some(node) => current = node,
+                None => return,
+            }
         }
         if !current.is_end {
             self.word_count += 1;
@@ -144,7 +152,7 @@ impl Trie {
         self._collect_words(current, prefix, &mut results);
 
         // Sort by frequency descending
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         if max_results > 0 && results.len() > max_results {
             results.truncate(max_results);
@@ -180,7 +188,7 @@ impl Trie {
     pub fn all_words(&self) -> Vec<(String, u64)> {
         let mut results = Vec::new();
         self._collect_words(&self.root, "", &mut results);
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|b| std::cmp::Reverse(b.1));
         results
     }
 
@@ -193,7 +201,12 @@ impl Trie {
     ///
     /// # Returns
     /// Vector of (word, distance, frequency) tuples sorted by distance, then frequency
-    pub fn find_similar(&self, word: &str, max_distance: usize, limit: usize) -> Vec<(String, usize, u64)> {
+    pub fn find_similar(
+        &self,
+        word: &str,
+        max_distance: usize,
+        limit: usize,
+    ) -> Vec<(String, usize, u64)> {
         let all_words = self.all_words();
         let mut results: Vec<(String, usize, u64)> = all_words
             .into_iter()
@@ -207,9 +220,7 @@ impl Trie {
             })
             .collect();
 
-        results.sort_by(|a, b| {
-            a.1.cmp(&b.1).then_with(|| b.2.cmp(&a.2))
-        });
+        results.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| b.2.cmp(&a.2)));
 
         if limit > 0 && results.len() > limit {
             results.truncate(limit);
@@ -243,11 +254,11 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
 
     let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
 
-    for i in 0..=len1 {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate().take(len1 + 1) {
+        row[0] = i;
     }
-    for j in 0..=len2 {
-        matrix[0][j] = j;
+    for (j, val) in matrix[0].iter_mut().enumerate().take(len2 + 1) {
+        *val = j;
     }
 
     let mut last_row: HashMap<char, usize> = HashMap::new();
@@ -263,7 +274,8 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
             let mut trans = usize::MAX;
             if let Some(&prev_col) = last_row.get(c2) {
                 if prev_col < i && last_col < j {
-                    trans = matrix[prev_col][last_col] + (i - prev_col - 1) + 1 + (j - last_col - 1);
+                    trans =
+                        matrix[prev_col][last_col] + (i - prev_col - 1) + 1 + (j - last_col - 1);
                 }
             }
 
@@ -342,7 +354,10 @@ impl Trie {
         let words: Vec<DictEntry> = self
             .all_words()
             .into_iter()
-            .map(|(w, f)| DictEntry { word: w, frequency: f })
+            .map(|(w, f)| DictEntry {
+                word: w,
+                frequency: f,
+            })
             .collect();
 
         let dict_file = DictFile {
@@ -356,6 +371,10 @@ impl Trie {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
 mod tests {
     use super::*;
 

@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -39,7 +39,7 @@ impl StaticErrorMap {
     }
 
     /// Maximum JSON file size in bytes (1MB) - prevents DoS from malicious files
-    const MAX_JSON_SIZE: usize = 1 * 1024 * 1024;
+    const MAX_JSON_SIZE: usize = 1024 * 1024;
 
     /// Load from JSON file with size limit
     pub fn from_json_file(path: &Path) -> Result<Self> {
@@ -117,7 +117,9 @@ impl StaticErrorMap {
 
         {
             let mut inner = self.inner.write();
-            inner.user_errors.insert(typo_lower.clone(), correction_lower);
+            inner
+                .user_errors
+                .insert(typo_lower.clone(), correction_lower);
             // Increment frequency
             *inner.frequency.entry(typo_lower).or_insert(0) += 1;
         }
@@ -133,7 +135,9 @@ impl StaticErrorMap {
     /// Insert a static error correction
     pub fn insert_static(&self, typo: &str, correction: &str) {
         let mut inner = self.inner.write();
-        inner.errors.insert(typo.to_lowercase(), correction.to_lowercase());
+        inner
+            .errors
+            .insert(typo.to_lowercase(), correction.to_lowercase());
         inner.frequency.insert(typo.to_lowercase(), 1000);
     }
 
@@ -195,7 +199,9 @@ impl StaticErrorMap {
 
         let mut inner = self.inner.write();
         for (typo, correction) in errors {
-            inner.user_errors.insert(typo.to_lowercase(), correction.to_lowercase());
+            inner
+                .user_errors
+                .insert(typo.to_lowercase(), correction.to_lowercase());
         }
 
         Ok(())
@@ -227,8 +233,11 @@ impl StaticErrorMap {
 /// Statistics about an error map
 #[derive(Debug, Clone)]
 pub struct ErrorMapStats {
+    /// Number of static (loaded) error entries
     pub static_errors: usize,
+    /// Number of user-learned error entries
     pub user_errors: usize,
+    /// Language code (ISO 639-1) this map applies to
     pub language: String,
 }
 
@@ -239,6 +248,10 @@ impl Default for StaticErrorMap {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
 mod tests {
     use super::*;
 

@@ -1,0 +1,20 @@
+﻿#!/usr/bin/env bash
+# Pre-push hook: runs the same checks as CI before allowing a push.
+# Install with: ./scripts/install-hooks.sh
+# Bypass with:  git push --no-verify
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [ -f "./scripts/ci-local.sh" ]; then
+    echo "[pre-push] Running local CI suite..."
+    ./scripts/ci-local.sh --no-cov
+elif command -v powershell >/dev/null 2>&1 && [ -f "./scripts/ci-local.ps1" ]; then
+    echo "[pre-push] Running local CI suite (PowerShell)..."
+    powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/ci-local.ps1 -SkipCoverage
+else
+    echo "[pre-push] No CI script found; skipping." >&2
+    exit 0
+fi

@@ -4,10 +4,10 @@
 //! dictionaries to provide accurate typo corrections.
 
 use crate::core::Trie;
-use crate::language::LanguageDetector;
 use crate::correction::{DamerauLevenshtein, StaticErrorMap};
-use std::sync::Arc;
+use crate::language::LanguageDetector;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Correction candidate
 #[derive(Debug, Clone)]
@@ -71,6 +71,10 @@ impl Default for EngineConfig {
 }
 
 /// Main correction engine
+#[allow(
+    missing_debug_implementations,
+    reason = "RwLock fields and HashMap state; manual Debug impl is not worth the maintenance burden"
+)]
 pub struct CorrectionEngine {
     config: EngineConfig,
     /// Dictionaries by language (interior mutability)
@@ -78,6 +82,10 @@ pub struct CorrectionEngine {
     /// Error maps by language (interior mutability)
     error_maps: RwLock<std::collections::HashMap<String, Arc<StaticErrorMap>>>,
     /// Damerau-Levenshtein calculator
+    #[allow(
+        dead_code,
+        reason = "pre-allocated for future inline Damerau-Levenshtein; currently routes through static methods"
+    )]
     damerau: RwLock<DamerauLevenshtein>,
     /// Current language detector (interior mutability)
     detector: RwLock<Arc<LanguageDetector>>,
@@ -195,7 +203,11 @@ impl CorrectionEngine {
         }
 
         // Find similar words within max edit distance
-        let similar = dict.find_similar(word, self.config.max_edit_distance, self.config.max_candidates);
+        let similar = dict.find_similar(
+            word,
+            self.config.max_edit_distance,
+            self.config.max_candidates,
+        );
 
         similar
             .into_iter()
@@ -349,6 +361,14 @@ impl Default for CorrectionEngine {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
+#[allow(
+    unused_mut,
+    reason = "mut bindings used in assertions; may be removed in future"
+)]
 mod tests {
     use super::*;
 
@@ -371,12 +391,12 @@ mod tests {
         trie.insert("is", 8000);
         engine.add_dictionary("en", Arc::new(trie));
 
-        let detector = Arc::new(
-            LanguageDetector::new(crate::language::detector::DetectorConfig {
+        let detector = Arc::new(LanguageDetector::new(
+            crate::language::detector::DetectorConfig {
                 min_words_before_switch: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         // Set language (set_language uses interior mutability via RwLock)
         detector.set_language("en");
@@ -421,12 +441,12 @@ mod tests {
         trie.insert("world", 800);
         engine.add_dictionary("en", Arc::new(trie));
 
-        let detector = Arc::new(
-            LanguageDetector::new(crate::language::detector::DetectorConfig {
+        let detector = Arc::new(LanguageDetector::new(
+            crate::language::detector::DetectorConfig {
                 min_words_before_switch: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
         let engine = engine.with_detector(detector);
 
         let text = "hello, world!";
@@ -468,12 +488,12 @@ mod tests {
         trie.insert("naïve", 800);
         engine.add_dictionary("en", Arc::new(trie));
 
-        let detector = Arc::new(
-            LanguageDetector::new(crate::language::detector::DetectorConfig {
+        let detector = Arc::new(LanguageDetector::new(
+            crate::language::detector::DetectorConfig {
                 min_words_before_switch: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
         let engine = engine.with_detector(detector);
 
         let text = "I love café";
@@ -506,12 +526,12 @@ mod tests {
         trie.insert("isn't", 800);
         engine.add_dictionary("en", Arc::new(trie));
 
-        let detector = Arc::new(
-            LanguageDetector::new(crate::language::detector::DetectorConfig {
+        let detector = Arc::new(LanguageDetector::new(
+            crate::language::detector::DetectorConfig {
                 min_words_before_switch: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
         let engine = engine.with_detector(detector);
 
         let result = engine.correct("don't");
@@ -548,12 +568,12 @@ mod tests {
         trie.insert("hella", 600);
         engine.add_dictionary("en", Arc::new(trie));
 
-        let detector = Arc::new(
-            LanguageDetector::new(crate::language::detector::DetectorConfig {
+        let detector = Arc::new(LanguageDetector::new(
+            crate::language::detector::DetectorConfig {
                 min_words_before_switch: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
         let engine = engine.with_detector(detector);
 
         let candidates = engine.get_corrections("helo");

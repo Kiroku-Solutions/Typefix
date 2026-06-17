@@ -6,7 +6,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Trie benchmarks
     c.bench_function("trie_insert", |b| {
         use typefix::Trie;
-        let mut trie = Trie::new();
+        let trie = Trie::new();
         b.iter(|| {
             let mut t = trie.clone();
             t.insert(black_box("benchmark"), black_box(1000));
@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Damerau-Levenshtein benchmarks
     c.bench_function("damerau_distance_one", |b| {
         use typefix::DamerauLevenshtein;
-        let calc = DamerauLevenshtein::new();
+        let mut calc = DamerauLevenshtein::new();
         b.iter(|| calc.distance(black_box("qeu"), black_box("que"), black_box(1)));
     });
 }

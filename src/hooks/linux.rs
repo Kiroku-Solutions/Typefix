@@ -3,17 +3,19 @@
 //! Uses XCB for X11 keystroke capture. Requires X11 server running.
 
 #[cfg(target_os = "linux")]
-use super::{HookConfig, HookError, KeyboardHook, HookEvent, KeyEvent, Modifiers, SpecialKey, ControlKey};
+use super::{
+    ControlKey, HookConfig, HookError, HookEvent, KeyEvent, KeyboardHook, Modifiers, SpecialKey,
+};
+#[cfg(target_os = "linux")]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "linux")]
 use std::sync::mpsc::{channel, Receiver, Sender};
+#[cfg(target_os = "linux")]
+use std::sync::{Arc, Mutex};
 #[cfg(target_os = "linux")]
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
-#[cfg(target_os = "linux")]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(target_os = "linux")]
-use std::sync::{Arc, Mutex};
 
 /// Linux-specific keyboard hook using XCB
 #[cfg(target_os = "linux")]
@@ -121,10 +123,12 @@ impl KeyboardHook for LinuxHook {
         }
 
         let (tx, _rx) = channel::<HookEvent>();
-        
+
         // Store sender
-        *self.sender.lock().unwrap() = Some(tx);
-        
+        if let Ok(mut guard) = self.sender.lock() {
+            *guard = Some(tx);
+        }
+
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
         let log_keystrokes = self.config.log_keystrokes;
@@ -141,25 +145,34 @@ impl KeyboardHook for LinuxHook {
             // 3. Grab keyboard input
             // 4. Process events in loop
             // 5. Ungrab on stop
-            
+
             // For this implementation, we check for DISPLAY and attempt connection
             let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
-            
+
             if let Ok(conn) = xcb::Connection::connect(Some(&display)) {
                 let (conn, screen_num) = conn;
-                tracing::info!("Connected to X server on {}, screen {}", display, screen_num);
-                
+                tracing::info!(
+                    "Connected to X server on {}, screen {}",
+                    display,
+                    screen_num
+                );
+
                 let setup = conn.get_setup();
-                let screen = setup.roots().nth(screen_num as usize)
-                    .expect("Screen not found");
-                
+                let screen = match setup.roots().nth(screen_num as usize) {
+                    Some(s) => s,
+                    None => {
+                        tracing::error!("Screen not found");
+                        return;
+                    }
+                };
+
                 // Get keyboard input focus
                 let window = screen.root();
-                
+
                 // Grab keyboard (synchronous grab)
                 // This would require XKB extension for proper Unicode handling
                 // Simplified here - just demonstrate XCB connection
-                
+
                 while !stop_flag.load(Ordering::SeqCst) {
                     // Poll for events
                     if let Some(event) = conn.poll_for_event() {
@@ -167,9 +180,9 @@ impl KeyboardHook for LinuxHook {
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_millis() as u64)
                             .unwrap_or(0);
-                        
+
                         let event_type = event.response_type() & 0x7f;
-                        
+
                         // Key press events are 2, Key release are 3
                         if event_type == xcb::KEY_PRESS || event_type == xcb::KEY_RELEASE {
                             if log_keystrokes {
@@ -206,7 +219,9 @@ impl KeyboardHook for LinuxHook {
         }
 
         // Clear sender
-        *self.sender.lock().unwrap() = None;
+        if let Ok(mut guard) = self.sender.lock() {
+            *guard = None;
+        }
         self.running.store(false, Ordering::SeqCst);
 
         Ok(())
@@ -235,17 +250,21 @@ pub struct LinuxHook;
 #[cfg(not(target_os = "linux"))]
 impl LinuxHook {
     pub fn new(_config: super::HookConfig) -> Result<Self, super::HookError> {
-        Err(HookError::PlatformError("Linux hook not available on this platform".to_string()))
+        Err(HookError::PlatformError(
+            "Linux hook not available on this platform".to_string(),
+        ))
     }
 }
 
 #[cfg(not(target_os = "linux"))]
-use super::{KeyboardHook, HookError};
+use super::{HookError, KeyboardHook};
 
 #[cfg(not(target_os = "linux"))]
 impl KeyboardHook for LinuxHook {
     fn start(&self) -> Result<(), HookError> {
-        Err(HookError::PlatformError("Linux hook not available on this platform".to_string()))
+        Err(HookError::PlatformError(
+            "Linux hook not available on this platform".to_string(),
+        ))
     }
 
     fn stop(&mut self) -> Result<(), HookError> {

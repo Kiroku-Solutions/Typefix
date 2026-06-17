@@ -1,5 +1,5 @@
-﻿//! TypeFix - CLI Entry Point
-//! 
+//! TypeFix - CLI Entry Point
+//!
 //! Usage:
 //!   typefix              # Start as daemon
 //!   typefix -c <file>    # Start with custom config
@@ -16,19 +16,13 @@ fn main() -> Result<()> {
     let matches = clap::Command::new("typefix")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Hyper-lightweight typo correction and language detection engine")
-        .subcommand(
-            clap::Command::new("repl")
-                .about("Start interactive REPL mode")
-        )
+        .subcommand(clap::Command::new("repl").about("Start interactive REPL mode"))
         .subcommand(
             clap::Command::new("correct")
                 .about("Correct a single word")
-                .arg(clap::Arg::new("word").required(true))
+                .arg(clap::Arg::new("word").required(true)),
         )
-        .subcommand(
-            clap::Command::new("bench")
-                .about("Run performance benchmarks")
-        )
+        .subcommand(clap::Command::new("bench").about("Run performance benchmarks"))
         .arg(
             clap::Arg::new("config")
                 .short('c')
@@ -55,9 +49,12 @@ fn main() -> Result<()> {
         .get_matches();
 
     // Initialize logging
-    let log_level = if matches.get_flag("verbose") { "debug" } else { "info" };
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let log_level = if matches.get_flag("verbose") {
+        "debug"
+    } else {
+        "info"
+    };
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     tracing_subscriber::registry()
         .with(fmt::layer())
@@ -68,12 +65,11 @@ fn main() -> Result<()> {
     match matches.subcommand_name() {
         Some("repl") => run_repl()?,
         Some("correct") => {
-            let word = matches
-                .subcommand_matches("correct")
-                .unwrap()
-                .get_one::<String>("word")
-                .unwrap();
-            correct_word(word)?;
+            if let Some(correct_matches) = matches.subcommand_matches("correct") {
+                if let Some(word) = correct_matches.get_one::<String>("word") {
+                    correct_word(word)?;
+                }
+            }
         }
         Some("bench") => run_benchmarks()?,
         _ => run_daemon(matches.clone())?,
@@ -84,13 +80,18 @@ fn main() -> Result<()> {
 
 fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
     // Load configuration
-    let config_path = matches.get_one::<String>("config").unwrap();
-    let data_path: PathBuf = matches.get_one::<String>("data-path").unwrap().into();
+    let config_path = matches
+        .get_one::<String>("config")
+        .ok_or_else(|| anyhow::anyhow!("Missing --config argument"))?;
+    let data_path: PathBuf = matches
+        .get_one::<String>("data-path")
+        .ok_or_else(|| anyhow::anyhow!("Missing --data-path argument"))?
+        .into();
 
     tracing::info!("Loading configuration from {}", config_path);
 
-    let config = typefix::core::config::Config::from_file(config_path)
-        .context("Failed to load config")?;
+    let config =
+        typefix::core::config::Config::from_file(config_path).context("Failed to load config")?;
     let config = typefix::core::config::Config {
         data_path,
         ..config
@@ -111,7 +112,7 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
 }
 
 fn run_repl() -> Result<()> {
-    use typefix::{TypeFixPipeline, PipelineConfig, PipelineEvent};
+    use typefix::{PipelineEvent, TypeFixPipeline};
 
     println!("\n╔══════════════════════════════════════╗");
     println!("║       TypeFix REPL Mode          ║");
@@ -119,22 +120,30 @@ fn run_repl() -> Result<()> {
     println!("Type text to see corrections. Press Ctrl+D to exit.\n");
 
     let pipeline = TypeFixPipeline::simple();
-    
+
     // Subscribe to events
-    pipeline.on_event(|event| {
-        match event {
-            PipelineEvent::WordExtracted { word } => {
-                println!("  [word] {}", word);
-            }
-            PipelineEvent::WordCorrected { original, corrected } => {
-                println!("  [fix]  {} → {}", original, corrected);
-            }
-            PipelineEvent::LanguageDetected { language, confidence } => {
-                println!("  [lang] {} ({:.0}% confidence)", language, confidence * 100.0);
-            }
-            PipelineEvent::BufferOverflow { word } => {
-                println!("  [warn] Buffer overflow: {}", word);
-            }
+    pipeline.on_event(|event| match event {
+        PipelineEvent::WordExtracted { word } => {
+            println!("  [word] {}", word);
+        }
+        PipelineEvent::WordCorrected {
+            original,
+            corrected,
+        } => {
+            println!("  [fix]  {} → {}", original, corrected);
+        }
+        PipelineEvent::LanguageDetected {
+            language,
+            confidence,
+        } => {
+            println!(
+                "  [lang] {} ({:.0}% confidence)",
+                language,
+                confidence * 100.0
+            );
+        }
+        PipelineEvent::BufferOverflow { word } => {
+            println!("  [warn] Buffer overflow: {}", word);
         }
     });
 
@@ -162,11 +171,11 @@ fn run_repl() -> Result<()> {
 }
 
 fn correct_word(word: &str) -> Result<()> {
-    use typefix::{CorrectionEngine, EngineConfig};
-    use typefix::core::Trie;
     use std::sync::Arc;
+    use typefix::core::Trie;
+    use typefix::{CorrectionEngine, EngineConfig};
 
-    let mut engine = CorrectionEngine::new(EngineConfig::default());
+    let engine = CorrectionEngine::new(EngineConfig::default());
 
     // Add test dictionary
     let mut trie = Trie::new();
@@ -194,28 +203,28 @@ fn run_benchmarks() -> Result<()> {
 
     // Run stress tests
     println!("Running stress tests...\n");
-    
+
     use std::time::Instant;
-    use typefix::{TypeFixPipeline, PipelineConfig};
     use typefix::core::Trie;
-    use std::sync::Arc;
+    use typefix::TypeFixPipeline;
 
     // Benchmark 1: Pipeline throughput
     let pipeline = TypeFixPipeline::simple();
-    let test_text = "this is a test of the typo correction engine with some common typos like teh and qeu";
-    
+    let test_text =
+        "this is a test of the typo correction engine with some common typos like teh and qeu";
+
     let start = Instant::now();
     let mut words_processed = 0;
-    
+
     for ch in test_text.chars() {
         if pipeline.push(ch).is_some() {
             words_processed += 1;
         }
     }
-    
+
     let elapsed = start.elapsed();
     let chars_per_sec = (test_text.len() as f64 * 1000.0) / elapsed.as_millis() as f64;
-    
+
     println!("Pipeline throughput:");
     println!("  - Chars/sec: {:.0}", chars_per_sec);
     println!("  - Words processed: {}", words_processed);
@@ -224,24 +233,32 @@ fn run_benchmarks() -> Result<()> {
     // Benchmark 2: Dictionary operations
     let mut trie = Trie::new();
     let word_count = 50_000;
-    
+
     let start = Instant::now();
     for i in 0..word_count {
         trie.insert(&format!("word{:06}", i), i as u64);
     }
     let insert_time = start.elapsed();
-    
+
     let start = Instant::now();
     for i in 0..1000 {
         let _ = trie.search(&format!("word{:06}", i * 7 % word_count));
     }
     let search_time = start.elapsed();
-    
+
     println!("Dictionary operations ({} words):", word_count);
-    println!("  - Insert time: {:.2}ms", insert_time.as_secs_f64() * 1000.0);
-    println!("  - Search (1K ops): {:.2}ms", search_time.as_secs_f64() * 1000.0);
-    println!("  - Average search: {:.2}µs\n", 
-        (search_time.as_nanos() as f64 / 1000.0) / 1000.0);
+    println!(
+        "  - Insert time: {:.2}ms",
+        insert_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  - Search (1K ops): {:.2}ms",
+        search_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  - Average search: {:.2}µs\n",
+        (search_time.as_nanos() as f64 / 1000.0) / 1000.0
+    );
 
     println!("Benchmarks complete!");
     Ok(())

@@ -1,16 +1,16 @@
-﻿//! Stress tests for TypeFix
+//! Stress tests for TypeFix
 //!
 //! Tests high-volume scenarios and edge cases.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use typefix::core::{CharBuffer, CharBufferBuilder, Trie};
-use typefix::correction::{CorrectionEngine, StaticErrorMap, DamerauLevenshtein};
+use typefix::core::{CharBuffer, Trie};
+use typefix::correction::engine::EngineConfig;
+use typefix::correction::{CorrectionEngine, DamerauLevenshtein, StaticErrorMap};
+use typefix::language::detector::DetectorConfig;
 use typefix::language::{LanguageDetector, StopwordsTrie};
 use typefix::pipeline::TypeFixPipeline;
-use typefix::correction::engine::EngineConfig;
-use typefix::language::detector::DetectorConfig;
 
 // =============================================================================
 // Stress Test Results
@@ -107,7 +107,7 @@ pub fn stress_test_long_string(char_count: usize) -> StressTestResult {
     // Generate a long string of random-looking characters
     let mut chars = Vec::with_capacity(char_count);
     for i in 0..char_count {
-        chars.push(('a' as u8 + (i % 26) as u8) as char);
+        chars.push((b'a' + (i % 26) as u8) as char);
     }
     let long_string: String = chars.into_iter().collect();
 
@@ -127,17 +127,17 @@ pub fn stress_test_long_string(char_count: usize) -> StressTestResult {
         result.mark_passed();
         result.add_detail(&format!("buffer_correctly_limited_to_{}", expected_len));
     } else {
-        result.add_detail(&format!(
-            "unexpected_contents_len={}",
-            contents.len()
-        ));
+        result.add_detail(&format!("unexpected_contents_len={}", contents.len()));
     }
 
     result
 }
 
 /// Test burst input (many characters per second)
-pub fn stress_test_burst_input(chars_per_second: usize, duration_seconds: usize) -> StressTestResult {
+pub fn stress_test_burst_input(
+    chars_per_second: usize,
+    duration_seconds: usize,
+) -> StressTestResult {
     let mut result = StressTestResult::new("burst_input");
     let buffer = CharBuffer::new();
     let chars: Vec<char> = "hola mundo como estas".chars().collect();
@@ -177,12 +177,12 @@ pub fn stress_test_unicode() -> StressTestResult {
 
     // Test various unicode scenarios
     let test_cases = vec![
-        "café",           // accented characters
-        "naïve",          // diacritics
-        "日本語",         // CJK characters
-        "🎉🎊🎈",        // emojis
-        "مرحبا",          // Arabic
-        "Привет",         // Cyrillic
+        "café",       // accented characters
+        "naïve",      // diacritics
+        "日本語",     // CJK characters
+        "🎉🎊🎈",     // emojis
+        "مرحبا",      // Arabic
+        "Привет",     // Cyrillic
         "🌍🌎🌏🌐🗺️", // globe emojis
     ];
 
@@ -253,7 +253,10 @@ pub fn stress_test_large_dictionary(word_count: usize) -> StressTestResult {
 }
 
 /// Test memory with many dictionaries
-pub fn stress_test_multiple_dictionaries(lang_count: usize, words_per_lang: usize) -> StressTestResult {
+pub fn stress_test_multiple_dictionaries(
+    lang_count: usize,
+    words_per_lang: usize,
+) -> StressTestResult {
     let mut result = StressTestResult::new("multiple_dictionaries");
 
     let start = Instant::now();
@@ -299,12 +302,14 @@ pub fn stress_test_language_switching(switch_count: usize) -> StressTestResult {
         hysteresis_zone: 0.0,
         min_words_before_switch: 1,
     };
-    let mut detector = LanguageDetector::new(config);
+    let detector = LanguageDetector::new(config);
 
     // Spanish words
     let es_words = vec!["el", "la", "de", "que", "es", "y", "en", "un", "por", "con"];
     // English words
-    let en_words = vec!["the", "a", "of", "is", "and", "to", "in", "that", "it", "for"];
+    let en_words = vec![
+        "the", "a", "of", "is", "and", "to", "in", "that", "it", "for",
+    ];
 
     let mut es_stopwords = StopwordsTrie::new();
     for w in &es_words {
@@ -335,10 +340,7 @@ pub fn stress_test_language_switching(switch_count: usize) -> StressTestResult {
     result.set_duration(start.elapsed());
     result.operations = switch_count;
     result.mark_passed();
-    result.add_detail(&format!(
-        "processed_{}_language_switches",
-        switch_count
-    ));
+    result.add_detail(&format!("processed_{}_language_switches", switch_count));
 
     result
 }
@@ -352,7 +354,7 @@ pub fn stress_test_mixed_languages() -> StressTestResult {
         hysteresis_zone: 0.1,
         min_words_before_switch: 3,
     };
-    let mut detector = LanguageDetector::new(config);
+    let detector = LanguageDetector::new(config);
 
     let mut es_stopwords = StopwordsTrie::new();
     for w in &["el", "la", "de", "que", "es", "y", "en", "un"] {
@@ -368,8 +370,8 @@ pub fn stress_test_mixed_languages() -> StressTestResult {
 
     // Mixed sentence
     let mixed_words = vec![
-        "Hola", "como", "estas", "the", "weather", "es",
-        "muy", "nice", "today", "hoy", "es", "great",
+        "Hola", "como", "estas", "the", "weather", "es", "muy", "nice", "today", "hoy", "es",
+        "great",
     ];
 
     let start = Instant::now();
@@ -396,8 +398,7 @@ pub fn stress_test_high_volume_corrections(correction_count: usize) -> StressTes
     let engine = Arc::new(build_correction_engine());
 
     let typos = vec![
-        "qeu", "teh", "adn", "hte", "wrok", " recive",
-        "teh", "qeu", "hte", "adn", "wrok",
+        "qeu", "teh", "adn", "hte", "wrok", " recive", "teh", "qeu", "hte", "adn", "wrok",
     ];
 
     let start = Instant::now();
@@ -412,8 +413,7 @@ pub fn stress_test_high_volume_corrections(correction_count: usize) -> StressTes
     result.mark_passed();
     result.add_detail(&format!(
         "corrected_{}_typos_at_{:.0}_ops_sec",
-        correction_count,
-        result.ops_per_sec
+        correction_count, result.ops_per_sec
     ));
 
     result
@@ -425,15 +425,15 @@ pub fn stress_test_damerau_variants(iterations: usize) -> StressTestResult {
     let mut calc = DamerauLevenshtein::new();
 
     let test_cases = vec![
-        ("", ""),              // empty
-        ("a", "b"),           // single char
-        ("ab", "ba"),         // transposition
-        ("abc", "abd"),       // substitution
-        ("abc", "abcd"),      // insertion
-        ("abcd", "abc"),      // deletion
-        ("hello", "hola"),     // completely different
-        ("café", "café"),     // unicode identical
-        ("😀", "😁"),         // emoji
+        ("", ""),          // empty
+        ("a", "b"),        // single char
+        ("ab", "ba"),      // transposition
+        ("abc", "abd"),    // substitution
+        ("abc", "abcd"),   // insertion
+        ("abcd", "abc"),   // deletion
+        ("hello", "hola"), // completely different
+        ("café", "café"),  // unicode identical
+        ("😀", "😁"),      // emoji
     ];
 
     let start = Instant::now();
@@ -462,7 +462,16 @@ pub fn stress_test_pipeline(text_length: usize) -> StressTestResult {
 
     // Generate long text with typos
     let mut text = String::with_capacity(text_length);
-    let words = vec!["hola", "teh", "world", "qeu", "test", "and", "hte", "correction"];
+    let words = [
+        "hola",
+        "teh",
+        "world",
+        "qeu",
+        "test",
+        "and",
+        "hte",
+        "correction",
+    ];
 
     for i in 0..(text_length / 6) {
         if i > 0 {
@@ -475,7 +484,7 @@ pub fn stress_test_pipeline(text_length: usize) -> StressTestResult {
 
     let mut processed = 0;
     for ch in text.chars() {
-        if let Some(result_word) = pipeline.push(ch) {
+        if let Some(_result_word) = pipeline.push(ch) {
             processed += 1;
             // Could verify corrections here
         }
@@ -486,8 +495,7 @@ pub fn stress_test_pipeline(text_length: usize) -> StressTestResult {
     result.mark_passed();
     result.add_detail(&format!(
         "processed_{}_words_from_{}_chars",
-        processed,
-        text_length
+        processed, text_length
     ));
 
     result
@@ -498,7 +506,7 @@ pub fn stress_test_pipeline(text_length: usize) -> StressTestResult {
 // =============================================================================
 
 fn build_correction_engine() -> CorrectionEngine {
-    let mut engine = CorrectionEngine::new(EngineConfig::default());
+    let engine = CorrectionEngine::new(EngineConfig::default());
 
     let mut en_dict = Trie::new();
     for (word, freq) in &[
@@ -517,7 +525,7 @@ fn build_correction_engine() -> CorrectionEngine {
     }
     engine.add_dictionary("en", Arc::new(en_dict));
 
-    let mut error_map = StaticErrorMap::new("en");
+    let error_map = StaticErrorMap::new("en");
     error_map.insert_static("qeu", "que");
     error_map.insert_static("teh", "the");
     error_map.insert_static("adn", "and");
@@ -592,7 +600,7 @@ pub fn run_stress_test_suite() -> Vec<StressTestResult> {
 fn main() {
     println!("Running TypeFix Stress Test Suite...\n");
     let results = run_stress_test_suite();
-    
+
     // Exit with error code if any tests failed
     let failed = results.iter().filter(|r| !r.passed).count();
     if failed > 0 {
@@ -619,7 +627,10 @@ mod tests {
         let result = stress_test_rapid_input(100);
         assert!(result.passed);
         // ops_per_sec may be 0 if duration rounds to 0ms for very fast operations
-        assert!(result.operations >= 100, "should have recorded 100 operations");
+        assert!(
+            result.operations >= 100,
+            "should have recorded 100 operations"
+        );
     }
 
     #[test]

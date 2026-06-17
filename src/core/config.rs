@@ -1,4 +1,4 @@
-﻿//! Configuration management
+//! Configuration management
 //!
 //! Loads and validates configuration from YAML files with environment variable overrides.
 
@@ -6,12 +6,16 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Errors that can occur when loading or validating configuration
 #[derive(Error, Debug)]
 pub enum ConfigError {
+    /// Failed to read configuration file from disk
     #[error("Failed to read config file: {0}")]
     ReadError(#[from] std::io::Error),
+    /// Failed to parse configuration file contents
     #[error("Failed to parse config: {0}")]
     ParseError(#[from] serde_json::Error),
+    /// Configuration values failed validation
     #[error("Validation error: {0}")]
     ValidationError(String),
 }
@@ -176,19 +180,16 @@ pub struct HooksConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
+/// Hook mode selecting how keyboard hooks are installed
 pub enum HookMode {
     /// System-wide hook (requires elevation on Windows)
+    #[default]
     System,
     /// Application-specific hook
     Application,
     /// Disabled (correction only via API)
     Disabled,
-}
-
-impl Default for HookMode {
-    fn default() -> Self {
-        Self::System
-    }
 }
 
 impl Default for HooksConfig {
@@ -210,11 +211,7 @@ impl Config {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)?;
 
-        let config = if path.extension().map_or(false, |e| e == "json") {
-            serde_json::from_str(&content)?
-        } else {
-            serde_json::from_str(&content)? // Default to JSON
-        };
+        let config = serde_json::from_str(&content)?;
 
         let config: Config = config;
         config.validate()?;
@@ -285,14 +282,18 @@ impl Config {
     }
 }
 
+/// File format used for serializing/deserializing configuration
 #[derive(Debug, Clone, Copy)]
 pub enum ConfigFormat {
-   Yaml,
+    /// YAML format (reserved; project currently parses JSON)
+    Yaml,
+    /// JSON format
     Json,
 }
 
 /// Default configuration file content
 impl Config {
+    /// Built-in default configuration as a YAML/JSON-like string
     pub fn default_config_file() -> &'static str {
         r#"# TypeFix Configuration
 
@@ -347,6 +348,10 @@ hooks:
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
 mod tests {
     use super::*;
 

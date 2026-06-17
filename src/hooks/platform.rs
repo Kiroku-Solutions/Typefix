@@ -3,8 +3,11 @@
 //! Provides a unified interface for keyboard hooks across all platforms.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+#[cfg(test)]
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::Duration;
 
 /// Keyboard event types
@@ -21,28 +24,46 @@ pub enum KeyEvent {
 /// Control keys
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlKey {
+    /// Shift modifier key
     Shift,
+    /// Control modifier key
     Ctrl,
+    /// Alt modifier key
     Alt,
+    /// Caps Lock toggle key
     CapsLock,
+    /// Num Lock toggle key
     NumLock,
 }
 
 /// Special keys
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialKey {
+    /// Enter / Return key
     Enter,
+    /// Tab key
     Tab,
+    /// Backspace key
     Backspace,
+    /// Delete key
     Delete,
+    /// Escape key
     Escape,
+    /// Home key
     Home,
+    /// End key
     End,
+    /// Page Up key
     PageUp,
+    /// Page Down key
     PageDown,
+    /// Up arrow key
     ArrowUp,
+    /// Down arrow key
     ArrowDown,
+    /// Left arrow key
     ArrowLeft,
+    /// Right arrow key
     ArrowRight,
 }
 
@@ -60,9 +81,13 @@ pub struct HookEvent {
 /// Keyboard modifiers state
 #[derive(Debug, Clone, Default)]
 pub struct Modifiers {
+    /// Shift key is currently held
     pub shift: bool,
+    /// Control key is currently held
     pub ctrl: bool,
+    /// Alt key is currently held
     pub alt: bool,
+    /// Caps Lock is currently active
     pub caps_lock: bool,
 }
 
@@ -77,10 +102,14 @@ pub struct HookConfig {
     pub mode: HookMode,
 }
 
+/// Hook mode selecting the installation scope of the keyboard hook
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookMode {
+    /// System-wide hook (requires elevation on Windows)
     System,
+    /// Application-scoped hook
     Application,
+    /// Hook disabled
     Disabled,
 }
 
@@ -112,14 +141,19 @@ pub trait KeyboardHook: Send {
 /// Hook errors
 #[derive(Debug, thiserror::Error)]
 pub enum HookError {
+    /// Hook installation failed during startup
     #[error("Hook initialization failed: {0}")]
     InitFailed(String),
+    /// Attempted to start a hook that is already running
     #[error("Hook already running")]
     AlreadyRunning,
+    /// Attempted to use a hook that has not been started
     #[error("Hook not running")]
     NotRunning,
+    /// The OS denied the privileges required to install the hook
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
+    /// A platform-specific error occurred while running the hook
     #[error("Platform error: {0}")]
     PlatformError(String),
 }
@@ -141,69 +175,91 @@ pub fn create_hook(config: HookConfig) -> Result<Box<dyn KeyboardHook>, HookErro
 }
 
 /// Mock hook for testing
-    pub struct MockHook {
-        config: HookConfig,
-        running: Arc<AtomicBool>,
-        sender: Option<Sender<HookEvent>>,
-        receiver: Receiver<HookEvent>,
-    }
+#[allow(
+    missing_debug_implementations,
+    reason = "test mock contains Arc<AtomicBool> and channels; manual Debug adds no value"
+)]
+pub struct MockHook {
+    #[allow(
+        dead_code,
+        reason = "config is only read in tests via MockHook::new(HookConfig::default())"
+    )]
+    config: HookConfig,
+    running: Arc<AtomicBool>,
+    sender: Option<Sender<HookEvent>>,
+    receiver: Receiver<HookEvent>,
+}
 
-    impl MockHook {
-        pub fn new(config: HookConfig) -> Self {
-            let (sender, receiver) = channel();
-            Self {
-                config,
-                running: Arc::new(AtomicBool::new(false)),
-                sender: Some(sender),
-                receiver,
-            }
-        }
-
-        /// Simulate a keypress (for testing)
-        pub fn simulate(&self, event: KeyEvent) {
-            let hook_event = HookEvent {
-                event,
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64,
-                modifiers: Modifiers::default(),
-            };
-            if let Some(ref sender) = self.sender {
-                let _ = sender.send(hook_event);
-            }
+impl MockHook {
+    /// Construct a new `MockHook` using the supplied configuration
+    pub fn new(config: HookConfig) -> Self {
+        let (sender, receiver) = channel();
+        Self {
+            config,
+            running: Arc::new(AtomicBool::new(false)),
+            sender: Some(sender),
+            receiver,
         }
     }
 
-    impl KeyboardHook for MockHook {
-        fn start(&self) -> Result<(), HookError> {
-            if self.running.load(Ordering::SeqCst) {
-                return Err(HookError::AlreadyRunning);
-            }
-            self.running.store(true, Ordering::SeqCst);
-            Ok(())
-        }
-
-        fn stop(&mut self) -> Result<(), HookError> {
-            if !self.running.load(Ordering::SeqCst) {
-                return Err(HookError::NotRunning);
-            }
-            self.running.store(false, Ordering::SeqCst);
-            // Drop sender to disconnect receiver
-            self.sender = None;
-            Ok(())
-        }
-
-        fn is_running(&self) -> bool {
-            self.running.load(Ordering::SeqCst)
-        }
-
-        fn receiver(&self) -> &Receiver<HookEvent> {
-            &self.receiver
+    /// Simulate a keypress (for testing)
+    pub fn simulate(&self, event: KeyEvent) {
+        let hook_event = HookEvent {
+            event,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            modifiers: Modifiers::default(),
+        };
+        if let Some(ref sender) = self.sender {
+            let _ = sender.send(hook_event);
         }
     }
+}
+
+impl KeyboardHook for MockHook {
+    fn start(&self) -> Result<(), HookError> {
+        if self.running.load(Ordering::SeqCst) {
+            return Err(HookError::AlreadyRunning);
+        }
+        self.running.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn stop(&mut self) -> Result<(), HookError> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(HookError::NotRunning);
+        }
+        self.running.store(false, Ordering::SeqCst);
+        // Drop sender to disconnect receiver
+        self.sender = None;
+        Ok(())
+    }
+
+    fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+
+    fn receiver(&self) -> &Receiver<HookEvent> {
+        &self.receiver
+    }
+}
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
+#[allow(
+    clippy::bool_assert_comparison,
+    reason = "explicit false/true comparisons improve test readability"
+)]
+#[allow(unused_mut, reason = "mut bindings used in test assertions")]
+#[allow(
+    unused_variables,
+    reason = "result variables used implicitly by side-effecting test code"
+)]
 mod tests {
     use super::*;
 
@@ -223,7 +279,7 @@ mod tests {
     fn test_mock_hook_already_running() {
         let mut hook = MockHook::new(HookConfig::default());
         hook.start().unwrap();
-        
+
         let result = hook.start();
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), HookError::AlreadyRunning));
@@ -232,7 +288,7 @@ mod tests {
     #[test]
     fn test_mock_hook_not_running() {
         let mut hook = MockHook::new(HookConfig::default());
-        
+
         let result = hook.stop();
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), HookError::NotRunning));
@@ -251,7 +307,7 @@ mod tests {
 
         let rx = hook.receiver();
         let mut received = Vec::new();
-        
+
         // Receive all events with timeout
         loop {
             match rx.recv_timeout(Duration::from_millis(100)) {
@@ -262,7 +318,9 @@ mod tests {
         }
 
         assert_eq!(received.len(), 5);
-        assert!(received.iter().all(|e| matches!(e.event, KeyEvent::Char(_))));
+        assert!(received
+            .iter()
+            .all(|e| matches!(e.event, KeyEvent::Char(_))));
     }
 
     #[test]
@@ -274,7 +332,7 @@ mod tests {
 
         let rx = hook.receiver();
         let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
-        
+
         assert!(matches!(event.event, KeyEvent::Special(SpecialKey::Enter)));
     }
 
@@ -287,7 +345,7 @@ mod tests {
 
         let rx = hook.receiver();
         let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
-        
+
         assert!(matches!(event.event, KeyEvent::Control(ControlKey::Shift)));
     }
 
@@ -308,7 +366,7 @@ mod tests {
 
         let rx = hook.receiver();
         let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
-        
+
         assert_eq!(event.modifiers.shift, false); // Default
         assert_eq!(event.modifiers.ctrl, false);
     }
@@ -332,7 +390,7 @@ mod tests {
 
         let rx = hook.receiver();
         let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
-        
+
         assert!(event.timestamp >= before);
         assert!(event.timestamp <= after);
     }

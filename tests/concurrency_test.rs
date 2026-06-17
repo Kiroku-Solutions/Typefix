@@ -1,4 +1,4 @@
-﻿//! Concurrency stress tests for Section 7 (Zero Shared Global State).
+//! Concurrency stress tests for Section 7 (Zero Shared Global State).
 //!
 //! These tests exercise the read-mostly paths of the engine from many threads at
 //! once to catch data races, deadlocks, and logical hazards. They are intended
@@ -11,10 +11,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
-use typefix::correction::engine::EngineConfig;
-use typefix::correction::StaticErrorMap;
-use typefix::correction::CorrectionEngine;
 use typefix::core::Trie;
+use typefix::correction::engine::EngineConfig;
+use typefix::correction::CorrectionEngine;
+use typefix::correction::StaticErrorMap;
 use typefix::language::detector::{DetectorConfig, LanguageDetector};
 use typefix::language::StopwordsTrie;
 use typefix::pipeline::{PipelineConfig, TypeFixPipeline};
@@ -37,7 +37,7 @@ fn shared_correction_engine() -> Arc<CorrectionEngine> {
     }
 
     let errors = {
-        let mut e = StaticErrorMap::new("en");
+        let e = StaticErrorMap::new("en");
         e.insert_static("qeu", "que");
         e.insert_static("teh", "the");
         e.insert_static("wnat", "want");
@@ -75,7 +75,9 @@ fn test_concurrent_reads_correction_engine() {
     let engine = shared_correction_engine();
     // Use a static array so the `move ||` closure can borrow from it on every
     // iteration without re-cloning.
-    let inputs: [&str; 8] = ["hello", "teh", "qeu", "wnat", "world", "people", "helo", "worrld"];
+    let inputs: [&str; 8] = [
+        "hello", "teh", "qeu", "wnat", "world", "people", "helo", "worrld",
+    ];
 
     let start = Instant::now();
     let mut handles = Vec::with_capacity(THREADS);
@@ -99,7 +101,10 @@ fn test_concurrent_reads_correction_engine() {
     // Loose sanity: a few hundred corrections per thread should resolve
     // through the static map, but we never assert exact counts because
     // load order is non-deterministic.
-    assert!(total_hits > 0, "no corrections produced under concurrent read");
+    assert!(
+        total_hits > 0,
+        "no corrections produced under concurrent read"
+    );
     println!(
         "concurrent_reads: {} threads x {} iters in {:?} ({} corrections)",
         THREADS, ITERATIONS, elapsed, total_hits
@@ -190,7 +195,10 @@ fn test_concurrent_pipeline_push() {
     // The exact number depends on tokenisation order, but at least some
     // events must have been delivered to the shared collector.
     let total = *event_count.read();
-    assert!(total > 0, "no pipeline events delivered under concurrent push");
+    assert!(
+        total > 0,
+        "no pipeline events delivered under concurrent push"
+    );
 }
 
 /// Detector stress: many threads feed words into the same

@@ -344,9 +344,9 @@ See [LICENSE](./LICENSE) and [LICENSE-APACHE](./LICENSE-APACHE) for the full tex
 
 TypeFix is developed and maintained by [Kiroku Solutions](https://github.com/kiroku-solutions), a software consultancy focused on high-performance, low-latency text processing systems. We build open-source tools that make software more accessible to everyone.
 
-- Website: [kiroku.solutions](https://kiroku.solutions)
+- Website: [kiroku.solutions](https://www.kirokusolutions.com/)
 - GitHub: [@kiroku-solutions](https://github.com/kiroku-solutions)
-- Contact: opensource@kiroku.solutions
+- Contact: contact@kirokusolutions.com
 
 ## Support
 

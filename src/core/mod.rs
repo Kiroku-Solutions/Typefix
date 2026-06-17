@@ -4,6 +4,6 @@ pub mod buffer;
 pub mod config;
 pub mod trie;
 
-pub use buffer::{CharBuffer, CharBufferBuilder, BufferEvent};
+pub use buffer::{BufferEvent, CharBuffer, CharBufferBuilder};
 pub use config::Config;
 pub use trie::Trie;

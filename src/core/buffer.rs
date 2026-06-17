@@ -16,27 +16,59 @@ pub const MAX_BUFFER_SIZE: usize = 64;
 /// Delimiter types that trigger token extraction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delimiter {
+    /// Space character (` `)
     Space,
+    /// Newline / carriage return characters
     Enter,
+    /// Tab character (`\t`)
     Tab,
+    /// Any punctuation character
     Punctuation,
+    /// User-supplied custom delimiter character
     Custom(char),
 }
 
 impl Delimiter {
     /// Check if a character is a delimiter
     pub fn is_delimiter(ch: char) -> bool {
-        matches!(ch, ' ' | '\n' | '\r' | '\t')
-            || Self::is_punctuation(ch)
+        matches!(ch, ' ' | '\n' | '\r' | '\t') || Self::is_punctuation(ch)
     }
 
     /// Check if character is punctuation
     pub fn is_punctuation(ch: char) -> bool {
-        matches!(ch,
-            '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' |
-            '(' | ')' | '[' | ']' | '{' | '}' | '-' | '_' |
-            '/' | '\\' | '@' | '#' | '$' | '%' | '^' | '&' |
-            '*' | '+' | '=' | '<' | '>' | '|' | '~' | '`'
+        matches!(
+            ch,
+            '.' | ','
+                | ';'
+                | ':'
+                | '!'
+                | '?'
+                | '"'
+                | '\''
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '-'
+                | '_'
+                | '/'
+                | '\\'
+                | '@'
+                | '#'
+                | '$'
+                | '%'
+                | '^'
+                | '&'
+                | '*'
+                | '+'
+                | '='
+                | '<'
+                | '>'
+                | '|'
+                | '~'
+                | '`'
         )
     }
 
@@ -56,13 +88,26 @@ impl Delimiter {
 #[derive(Debug, Clone)]
 pub enum BufferEvent {
     /// Token was extracted (complete word)
-    TokenExtracted { token: String, delimiter: Delimiter },
+    TokenExtracted {
+        /// The extracted token text
+        token: String,
+        /// The delimiter that triggered extraction
+        delimiter: Delimiter,
+    },
     /// Buffer was truncated (max size reached)
-    BufferTruncated { original: String, truncated: String },
+    BufferTruncated {
+        /// The original buffer contents before truncation
+        original: String,
+        /// The remaining buffer contents after truncation
+        truncated: String,
+    },
     /// Buffer was cleared
     BufferCleared,
     /// Buffer overflow prevented
-    BufferOverflowPrevented { attempted: char },
+    BufferOverflowPrevented {
+        /// The character that was attempted to be added
+        attempted: char,
+    },
 }
 
 /// Thread-safe character buffer
@@ -71,6 +116,10 @@ pub enum BufferEvent {
 /// * Thread-safe via RwLock - multiple readers, single writer
 /// * Bounded size - max MAX_BUFFER_SIZE characters
 /// * Fail-safe - never panics, always returns valid state
+#[allow(
+    missing_debug_implementations,
+    reason = "Box<dyn Fn(BufferEvent)> is not Debug; manual impl would add no value"
+)]
 pub struct CharBuffer {
     inner: Arc<RwLock<BufferInner>>,
 }
@@ -260,12 +309,17 @@ impl Default for CharBuffer {
 }
 
 /// Builder for CharBuffer with custom configuration
+#[allow(
+    missing_debug_implementations,
+    reason = "Vec<Listener> contains Box<dyn Fn> which is not Debug"
+)]
 pub struct CharBufferBuilder {
     capacity: usize,
     listeners: Vec<Listener>,
 }
 
 impl CharBufferBuilder {
+    /// Create a new builder with default capacity
     pub fn new() -> Self {
         Self {
             capacity: MAX_BUFFER_SIZE,
@@ -273,11 +327,13 @@ impl CharBufferBuilder {
         }
     }
 
+    /// Set the maximum buffer capacity (clamped to `MAX_BUFFER_SIZE`)
     pub fn capacity(mut self, capacity: usize) -> Self {
         self.capacity = capacity.min(MAX_BUFFER_SIZE);
         self
     }
 
+    /// Register a callback to be invoked for every buffer event
     pub fn on_event<F>(mut self, callback: F) -> Self
     where
         F: Fn(BufferEvent) + Send + Sync + 'static,
@@ -286,6 +342,7 @@ impl CharBufferBuilder {
         self
     }
 
+    /// Build the configured `CharBuffer`
     pub fn build(self) -> CharBuffer {
         CharBuffer {
             inner: Arc::new(RwLock::new(BufferInner {
@@ -303,6 +360,10 @@ impl Default for CharBufferBuilder {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
 mod tests {
     use super::*;
 

@@ -1,25 +1,44 @@
-﻿//! Pipeline module - integrates all components
+//! Pipeline module - integrates all components
 //!
 //! Provides the main processing pipeline: Buffer -> Language Detection -> Correction
 
-use crate::core::{CharBuffer, CharBufferBuilder, BufferEvent};
-use crate::language::LanguageDetector;
-use crate::correction::CorrectionEngine;
+use crate::core::{CharBuffer, CharBufferBuilder};
 use crate::correction::engine::EngineConfig;
+use crate::correction::CorrectionEngine;
+use crate::language::LanguageDetector;
 use parking_lot::RwLock;
 use std::sync::Arc;
+
+/// Type alias for boxed pipeline event callbacks
+type EventCallback = Box<dyn Fn(PipelineEvent) + Send + Sync>;
 
 /// Pipeline event - emitted after each processing step
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
     /// Word was typed and extracted from buffer
-    WordExtracted { word: String },
+    WordExtracted {
+        /// The extracted word
+        word: String,
+    },
     /// Language was detected or changed
-    LanguageDetected { language: String, confidence: f64 },
+    LanguageDetected {
+        /// The detected language code (ISO 639-1)
+        language: String,
+        /// Confidence score in `[0.0, 1.0]`
+        confidence: f64,
+    },
     /// Word was corrected
-    WordCorrected { original: String, corrected: String },
+    WordCorrected {
+        /// The original word as typed
+        original: String,
+        /// The corrected word
+        corrected: String,
+    },
     /// Buffer overflow prevented
-    BufferOverflow { word: String },
+    BufferOverflow {
+        /// The word that triggered the overflow
+        word: String,
+    },
 }
 
 /// TypeFix Pipeline
@@ -29,14 +48,19 @@ pub enum PipelineEvent {
 /// 2. When a delimiter is hit, the word is extracted
 /// 3. Language is detected using Bayesian inference
 /// 4. Corrections are applied if needed
+#[allow(
+    missing_debug_implementations,
+    reason = "event_callbacks contains Box<dyn Fn> which is not Debug"
+)]
 pub struct TypeFixPipeline {
     buffer: CharBuffer,
     detector: Arc<LanguageDetector>,
     correction_engine: Arc<CorrectionEngine>,
     config: PipelineConfig,
-    event_callbacks: RwLock<Vec<Box<dyn Fn(PipelineEvent) + Send + Sync>>>,
+    event_callbacks: RwLock<Vec<EventCallback>>,
 }
 
+/// Configuration controlling pipeline behavior
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
     /// Enable automatic correction
@@ -67,7 +91,9 @@ impl TypeFixPipeline {
             buffer: CharBufferBuilder::new()
                 .capacity(config.buffer_size)
                 .build(),
-            detector: Arc::new(LanguageDetector::new(crate::language::detector::DetectorConfig::default())),
+            detector: Arc::new(LanguageDetector::new(
+                crate::language::detector::DetectorConfig::default(),
+            )),
             correction_engine: Arc::new(CorrectionEngine::new(EngineConfig::default())),
             config,
             event_callbacks: RwLock::new(Vec::new()),
@@ -103,9 +129,7 @@ impl TypeFixPipeline {
         let word = self.buffer.push(ch)?;
 
         // Emit word extracted event
-        self.emit_event(PipelineEvent::WordExtracted {
-            word: word.clone(),
-        });
+        self.emit_event(PipelineEvent::WordExtracted { word: word.clone() });
 
         // Detect language
         let mut detected_language = None;
@@ -199,7 +223,10 @@ impl TypeFixPipeline {
     }
 
     /// Get all corrections for a word (without applying)
-    pub fn get_suggestions(&self, word: &str) -> Vec<crate::correction::engine::CorrectionCandidate> {
+    pub fn get_suggestions(
+        &self,
+        word: &str,
+    ) -> Vec<crate::correction::engine::CorrectionCandidate> {
         self.correction_engine.get_corrections(word)
     }
 }
@@ -218,7 +245,7 @@ pub struct PipelineResult {
 impl TypeFixPipeline {
     /// Create a simple pipeline for testing
     pub fn simple() -> Self {
-        let mut pipeline = Self::new(PipelineConfig::default());
+        let pipeline = Self::new(PipelineConfig::default());
 
         // Add test dictionaries
         let mut en_dict = crate::core::Trie::new();
@@ -248,12 +275,12 @@ impl TypeFixPipeline {
         pipeline.add_stopwords("es", es_stopwords);
 
         // Add error maps
-        let mut en_errors = crate::correction::StaticErrorMap::new("en");
+        let en_errors = crate::correction::StaticErrorMap::new("en");
         en_errors.insert_static("qeu", "que");
         en_errors.insert_static("teh", "the");
         pipeline.add_error_map("en", en_errors);
 
-        let mut es_errors = crate::correction::StaticErrorMap::new("es");
+        let es_errors = crate::correction::StaticErrorMap::new("es");
         es_errors.insert_static("qeu", "que");
         pipeline.add_error_map("es", es_errors);
 
@@ -263,6 +290,10 @@ impl TypeFixPipeline {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
 mod tests {
     use super::*;
 

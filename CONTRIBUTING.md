@@ -39,6 +39,8 @@ This project adheres to a [Code of Conduct](./CODE_OF_CONDUCT.md). By participat
 - Windows: Visual Studio Build Tools
 - Linux: `build-essential` and `libxkbcommon-dev`
 - macOS: Xcode Command Line Tools
+- Optional: `just` ([install](https://github.com/casey/just)) for ergonomic task running
+- Optional: `cargo-llvm-cov` for coverage (`cargo install cargo-llvm-cov`)
 
 ### Building
 
@@ -47,6 +49,56 @@ cargo build
 cargo test
 cargo bench
 ```
+
+### Local CI (recommended)
+
+Before every push, run the same checks GitHub Actions runs. This is the single most effective way to avoid broken commits and review churn.
+
+**Using the script directly:**
+
+```bash
+# Windows PowerShell
+.\scripts\ci-local.ps1
+
+# Linux / macOS
+./scripts/ci-local.sh
+
+# Skip slow checks (release build, stress tests, coverage)
+./scripts/ci-local.sh --quick          # bash
+.\scripts\ci-local.ps1 -Quick          # PowerShell
+```
+
+**Using `just`** (requires [just](https://github.com/casey/just)):
+
+```bash
+just ci          # full local CI
+just ci-quick    # quick mode
+just fmt         # format code
+just clippy      # run clippy
+just test        # run tests
+just bench       # run benchmarks
+just coverage    # generate HTML coverage
+just doctor      # print versions of installed tools
+```
+
+### Git pre-push hook
+
+Install the pre-push hook to run the local CI suite automatically before every `git push`. Pushes that fail CI are blocked; bypass with `git push --no-verify` only when you have a reason.
+
+```bash
+# Windows PowerShell
+.\scripts\install-hooks.ps1
+
+# Linux / macOS
+./scripts/install-hooks.sh
+```
+
+After installation, `.githooks/` is used as the hooksPath so hooks stay version-controlled and the install is reproducible across machines.
+
+### Why this exists
+
+The CI pipeline runs six jobs (fmt, clippy, build, test, coverage, committee-rules). If a single one fails, the entire push is rejected by the gate. Running the same checks locally catches 95% of issues before the round-trip to GitHub, so you only push when the build is green.
+
 
 ### Project Structure
 

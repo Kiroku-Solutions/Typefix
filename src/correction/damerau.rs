@@ -112,9 +112,9 @@ impl DamerauLevenshtein {
             }
 
             match diff_count {
-                0 => 0,                        // Same
-                1 => 1,                        // Single substitution
-                2 if swap_pos.is_some() => 1,  // Transposition
+                0 => 0,                       // Same
+                1 => 1,                       // Single substitution
+                2 if swap_pos.is_some() => 1, // Transposition
                 _ => 2,
             }
         } else if len1 + 1 == len2 {
@@ -163,11 +163,11 @@ impl DamerauLevenshtein {
         let mut matrix = self.get_matrix(len1 + 1, len2 + 1);
 
         // Initialize first row and column
-        for i in 0..=len1 {
-            matrix[i][0] = i;
+        for (i, row) in matrix.iter_mut().enumerate().take(len1 + 1) {
+            row[0] = i;
         }
-        for j in 0..=len2 {
-            matrix[0][j] = j;
+        for (j, val) in matrix[0].iter_mut().enumerate().take(len2 + 1) {
+            *val = j;
         }
 
         // Track last row where each character was seen
@@ -189,7 +189,10 @@ impl DamerauLevenshtein {
 
                 let mut transposition = usize::MAX;
                 if last_match_tmp != 0 && last_match != 0 {
-                    transposition = matrix[last_match_tmp - 1][last_match - 1] + (i - last_match_tmp - 1) + 1 + (j - last_match - 1);
+                    transposition = matrix[last_match_tmp - 1][last_match - 1]
+                        + (i - last_match_tmp - 1)
+                        + 1
+                        + (j - last_match - 1);
                 }
 
                 matrix[i][j] = deletion.min(insertion).min(substitution).min(transposition);
@@ -213,9 +216,11 @@ impl DamerauLevenshtein {
     /// Get or create matrix from pool
     fn get_matrix(&mut self, rows: usize, cols: usize) -> Vec<Vec<usize>> {
         // Try to reuse a matrix from pool
-        if let Some(idx) = self.matrix_pool.iter().position(|m| {
-            !m.is_empty() && m[0].len() >= cols && m.len() >= rows
-        }) {
+        if let Some(idx) = self
+            .matrix_pool
+            .iter()
+            .position(|m| !m.is_empty() && m[0].len() >= cols && m.len() >= rows)
+        {
             let mut m = self.matrix_pool.remove(idx);
             for row in m.iter_mut().take(rows) {
                 row.resize(cols, 0);

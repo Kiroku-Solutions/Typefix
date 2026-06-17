@@ -1,9 +1,9 @@
-﻿//! Boundary tests for TypeFix - Section 8 of plan-implementacion.md
+//! Boundary tests for TypeFix - Section 8 of plan-implementacion.md
 //!
 //! These tests verify edge cases for:
 //!   - 8.1 Memory allocation (buffer overflow, empty, unicode 10k+)
 //!   - 8.2 UTF-8 edge cases (emojis, multi-byte scripts, combining chars,
-//!                          zero-width, BOM)
+//!     zero-width, BOM)
 //!   - 8.3 Rapid-fire input (10+ keys, burst 100 char/s, paste 10KB, IME)
 //!
 //! All tests use the prefix `test_boundary_` to match the section 8
@@ -18,13 +18,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use typefix::core::{CharBuffer, Trie};
-use typefix::MAX_BUFFER_SIZE;
-use typefix::correction::{CorrectionEngine, StaticErrorMap};
 use typefix::correction::engine::EngineConfig;
+use typefix::correction::{CorrectionEngine, StaticErrorMap};
 use typefix::hooks::platform::{
     ControlKey, HookConfig, HookMode, KeyEvent, KeyboardHook, MockHook, SpecialKey,
 };
-use typefix::pipeline::{TypeFixPipeline, PipelineConfig};
+use typefix::pipeline::{PipelineConfig, TypeFixPipeline};
+use typefix::MAX_BUFFER_SIZE;
 
 // =============================================================================
 // 8.1 Memory Allocation Tests
@@ -38,7 +38,7 @@ fn test_boundary_buffer_max_65_chars() {
     let buffer = CharBuffer::new();
 
     // Push 80 characters (well over MAX_BUFFER_SIZE = 64)
-    let input: String = std::iter::repeat('a').take(80).collect();
+    let input: String = "a".repeat(80);
     for ch in input.chars() {
         let _ = buffer.push(ch);
     }
@@ -441,9 +441,7 @@ fn test_boundary_keyboard_rollover_10_keys() {
 
     // 12 non-delimiter chars (digits + letters) before any delimiter.
     // This is what happens when the user types very fast.
-    let rollover: Vec<char> = vec![
-        'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '1', '2',
-    ];
+    let rollover: Vec<char> = vec!['h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '1', '2'];
     for &ch in &rollover {
         let _ = buffer.push(ch);
     }
@@ -478,11 +476,12 @@ fn test_boundary_keyboard_rollover_hook_15_keys() {
 
     // Receive all 15 events
     let mut received = 0;
-    loop {
-        match hook.receiver().recv_timeout(std::time::Duration::from_millis(50)) {
-            Ok(_) => received += 1,
-            Err(_) => break,
-        }
+    while hook
+        .receiver()
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_ok()
+    {
+        received += 1;
     }
 
     assert_eq!(received, 15, "expected 15 hook events, got {}", received);
@@ -541,9 +540,7 @@ fn test_boundary_paste_10kb() {
 
     // Build a 10KB+ string (10,000+ chars exactly = ~10KB in ASCII,
     // more in UTF-8). Pattern is 45 chars long; 230 repetitions = 10,350.
-    let long_text: String = std::iter::repeat("The quick brown fox jumps over the lazy dog. ")
-        .take(230) // 230 * 45 = 10,350 chars
-        .collect();
+    let long_text: String = "The quick brown fox jumps over the lazy dog. ".repeat(230); // 230 * 45 = 10,350 chars
     let char_count = long_text.chars().count();
     assert!(
         char_count >= 10_000,
@@ -697,11 +694,12 @@ fn test_boundary_rapid_typing_hook_no_event_loss() {
 
     // Drain receiver
     let mut count = 0;
-    loop {
-        match hook.receiver().recv_timeout(std::time::Duration::from_millis(50)) {
-            Ok(_) => count += 1,
-            Err(_) => break,
-        }
+    while hook
+        .receiver()
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_ok()
+    {
+        count += 1;
     }
 
     assert_eq!(
@@ -741,11 +739,12 @@ fn test_boundary_hook_multiple_key_types() {
 
     // Verify all 10 events arrived
     let mut count = 0;
-    loop {
-        match hook.receiver().recv_timeout(std::time::Duration::from_millis(50)) {
-            Ok(_) => count += 1,
-            Err(_) => break,
-        }
+    while hook
+        .receiver()
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_ok()
+    {
+        count += 1;
     }
 
     assert_eq!(count, 10, "expected 10 events, got {}", count);
@@ -764,7 +763,7 @@ fn test_boundary_correction_very_long_word() {
 
     // 1000-char word (way over MAX_BUFFER_SIZE) — engine should
     // gracefully return the original unchanged.
-    let long_word: String = std::iter::repeat('a').take(1000).collect();
+    let long_word: String = "a".repeat(1000);
     let result = engine.correct(&long_word);
 
     // Must not panic
@@ -779,7 +778,7 @@ fn test_boundary_correction_10k_unicode() {
     let engine = CorrectionEngine::new(EngineConfig::default());
 
     // 10,000 emoji — engine should process this without panic
-    let long_word: String = std::iter::repeat('\u{1F600}').take(10_000).collect();
+    let long_word: String = "\u{1F600}".repeat(10_000);
     let result = engine.correct(&long_word);
 
     // No panic, no correction (emoji not in dictionary)
@@ -845,7 +844,7 @@ fn test_boundary_pipeline_long_word_truncates() {
     let pipeline = TypeFixPipeline::new(config);
 
     // 100 chars, no delimiter — should be truncated to 64 in the buffer
-    let long_input: String = std::iter::repeat('a').take(100).collect();
+    let long_input: String = "a".repeat(100);
     for ch in long_input.chars() {
         let _ = pipeline.push(ch);
     }
@@ -860,6 +859,10 @@ fn test_boundary_pipeline_long_word_truncates() {
 // =============================================================================
 
 #[test]
+#[allow(
+    clippy::assertions_on_constants,
+    reason = "smoke test asserts compile-time constant to verify the test runner sees this file"
+)]
 fn test_boundary_smoke_compiles() {
     // Trivial test so the runner sees at least one passing test from
     // this file even if everything else was #[ignore]'d.
@@ -871,9 +874,12 @@ fn test_boundary_smoke_compiles() {
 // Test helpers - private utilities
 // =============================================================================
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test helper for future boundary tests; currently unused but available"
+)]
 fn build_test_engine_with_dict() -> CorrectionEngine {
-    let mut engine = CorrectionEngine::new(EngineConfig {
+    let engine = CorrectionEngine::new(EngineConfig {
         max_edit_distance: 1,
         max_candidates: 3,
         min_word_length: 2,
@@ -893,7 +899,7 @@ fn build_test_engine_with_dict() -> CorrectionEngine {
     }
     engine.add_dictionary("en", Arc::new(trie));
 
-    let mut error_map = StaticErrorMap::new("en");
+    let error_map = StaticErrorMap::new("en");
     error_map.insert_static("teh", "the");
     error_map.insert_static("qeu", "que");
     engine.add_error_map(Arc::new(error_map), "en");
@@ -903,7 +909,7 @@ fn build_test_engine_with_dict() -> CorrectionEngine {
 
 #[test]
 fn test_boundary_helper_engine_works() {
-    let mut engine = build_test_engine_with_dict();
+    let engine = build_test_engine_with_dict();
     // Set the language so the engine looks up the correct error map.
     engine.set_language("en");
     let result = engine.correct("teh");

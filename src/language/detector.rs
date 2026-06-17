@@ -25,6 +25,10 @@ pub struct DetectionResult {
 ///
 /// Uses a rolling window of words to calculate language probability.
 /// Requires stopwords trie to be loaded for each language.
+#[allow(
+    missing_debug_implementations,
+    reason = "RwLock fields and internal state; manual Debug impl is not worth the maintenance burden"
+)]
 pub struct LanguageDetector {
     config: DetectorConfig,
     /// Rolling window of recent words (interior mutability)
@@ -37,6 +41,7 @@ pub struct LanguageDetector {
     current_language: RwLock<String>,
 }
 
+/// Configuration controlling Bayesian language detection behavior
 #[derive(Debug, Clone)]
 pub struct DetectorConfig {
     /// Size of the rolling window for word collection
@@ -125,7 +130,10 @@ impl LanguageDetector {
         // Find best language
         let best_lang: String;
         let best_score: f64;
-        if let Some((lang, score)) = scores.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()) {
+        if let Some((lang, score)) = scores
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
             best_lang = lang.clone();
             best_score = *score;
         } else {
@@ -154,16 +162,15 @@ impl LanguageDetector {
     fn calculate_scores(&self) -> HashMap<String, f64> {
         let tries = self.stopwords_tries.read();
         let window = self.word_window.read();
-        
-        let mut scores: HashMap<String, f64> = tries
-            .keys()
-            .map(|l| (l.clone(), 0.0f64))
-            .collect();
+
+        let mut scores: HashMap<String, f64> = tries.keys().map(|l| (l.clone(), 0.0f64)).collect();
 
         for word in window.iter() {
             for (lang, trie) in tries.iter() {
                 if trie.is_stopword(word) {
-                    *scores.get_mut(lang).unwrap() += 1.0;
+                    if let Some(score) = scores.get_mut(lang) {
+                        *score += 1.0;
+                    }
                 }
             }
         }
@@ -180,7 +187,7 @@ impl LanguageDetector {
     }
 
     /// Determine if we should switch language
-    fn should_switch_language(&self, new_lang: &str, new_score: f64) -> bool {
+    fn should_switch_language(&self, _new_lang: &str, new_score: f64) -> bool {
         let current_lang = self.current_language.read();
 
         // Above threshold: confident enough to switch
@@ -204,11 +211,9 @@ impl LanguageDetector {
     fn calculate_current_score(&self, lang: &str) -> f64 {
         let window = self.word_window.read();
         let tries = self.stopwords_tries.read();
-        
+
         tries.get(lang).map_or(0.0, |trie| {
-            let count = window.iter()
-                .filter(|w| trie.is_stopword(w))
-                .count() as f64;
+            let count = window.iter().filter(|w| trie.is_stopword(w)).count() as f64;
             count / window.len().max(1) as f64
         })
     }
@@ -280,7 +285,6 @@ impl StopwordsTrie {
     pub fn from_json(json: &str) -> Result<Self> {
         #[derive(Deserialize)]
         struct StopwordsFile {
-            language: String,
             stopwords: Vec<String>,
         }
 
@@ -296,6 +300,18 @@ impl StopwordsTrie {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code uses unwrap for concise assertions"
+)]
+#[allow(
+    unused_mut,
+    reason = "mut bindings reserved for future assertions and mutation"
+)]
+#[allow(
+    unused_variables,
+    reason = "result variables used implicitly by side-effecting test code"
+)]
 mod tests {
     use super::*;
 
