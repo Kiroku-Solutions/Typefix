@@ -168,16 +168,16 @@ impl KeyboardHook for LinuxHook {
                 while !stop_flag.load(Ordering::SeqCst) {
                     // Poll for events
                     if let Ok(Some(event)) = conn.poll_for_event() {
-                        let timestamp = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis() as u64)
-                            .unwrap_or(0);
+                        if log_keystrokes {
+                            // Extract response type from UnknownEvent variant;
+                            // other variants don't expose it directly.
+                            let event_type = match &event {
+                                xcb::Event::Unknown(unknown) => unknown.response_type() & 0x7f,
+                                _ => 0,
+                            };
 
-                        let event_type = event.response_type() & 0x7f;
-
-                        // KeyPress = 2, KeyRelease = 3 (X protocol constants)
-                        if event_type == 2 || event_type == 3 {
-                            if log_keystrokes {
+                            // KeyPress = 2, KeyRelease = 3 (X protocol constants)
+                            if event_type == 2 || event_type == 3 {
                                 tracing::debug!("XCB KeyEvent: {:?}", event);
                             }
                         }
