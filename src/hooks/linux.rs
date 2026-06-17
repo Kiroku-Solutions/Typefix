@@ -17,6 +17,7 @@ use std::time::Duration;
 
 /// Linux-specific keyboard hook using XCB
 #[cfg(target_os = "linux")]
+#[derive(Debug)]
 pub struct LinuxHook {
     config: HookConfig,
     running: Arc<AtomicBool>,
@@ -39,6 +40,10 @@ impl LinuxHook {
     }
 
     /// Convert XCB keycode to character
+    #[expect(
+        dead_code,
+        reason = "keycode translator reserved for full XCB keyboard hook implementation; remove when wired up"
+    )]
     fn keycode_to_char(keycode: u8, modifiers: &Modifiers) -> Option<char> {
         // Keycode to keysym mapping simplified
         // Full implementation would use xcb's key_symbols
@@ -87,6 +92,10 @@ impl LinuxHook {
     }
 
     /// Map XCB keycode to special key
+    #[expect(
+        dead_code,
+        reason = "keycode translator reserved for full XCB keyboard hook implementation; remove when wired up"
+    )]
     fn keycode_to_special(keycode: u8) -> Option<SpecialKey> {
         match keycode {
             36 => Some(SpecialKey::Enter),

@@ -164,6 +164,7 @@ pub fn create_hook(config: HookConfig) -> Result<Box<dyn KeyboardHook>, HookErro
     Ok(Box::new(super::windows::WindowsHook::new(config)?))
 }
 
+/// Create a platform-specific Linux keyboard hook.
 #[cfg(target_os = "linux")]
 pub fn create_hook(config: HookConfig) -> Result<Box<dyn KeyboardHook>, HookError> {
     Ok(Box::new(super::linux::LinuxHook::new(config)?))
