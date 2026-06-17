@@ -136,10 +136,23 @@ jobs:
               print("::error::coverage.json is missing or empty. Did the cargo llvm-cov step fail?")
               sys.exit(1)
           data = json.load(open(path))
-          # cargo-llvm-cov summary JSON: top-level key "data" with per-package
-          # entries; each contains "summary" with "lines", "branches", etc.
-          total = data.get("data", {}).get("summary", {}).get("lines", {})
-          pct = total.get("percent", 0.0)
+          # cargo-llvm-cov JSON shape varies by version; handle both the
+          # wrapped form ({"data": [...]}) and the bare list form ([...]).
+          if isinstance(data, dict):
+              entries = data.get("data", [])
+          else:
+              entries = data
+          if not entries:
+              print("::error::coverage.json has no per-package entries.")
+              sys.exit(1)
+          # Aggregate line coverage across all packages.
+          total_count = 0
+          total_covered = 0
+          for entry in entries:
+              lines = entry.get("summary", {}).get("lines", {})
+              total_count += lines.get("count", 0)
+              total_covered += lines.get("covered", 0)
+          pct = (total_covered / total_count * 100.0) if total_count else 0.0
           print(f"Line coverage: {pct:.2f}%")
           if pct < 90.0:
               print(f"::error::Coverage {pct:.2f}% is below the required 90% gate.")
