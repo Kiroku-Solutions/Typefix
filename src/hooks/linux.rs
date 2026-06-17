@@ -22,7 +22,7 @@ pub struct LinuxHook {
     running: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     sender: Arc<Mutex<Option<Sender<HookEvent>>>>,
-    hook_thread: Option<thread::JoinHandle<()>>,
+    hook_thread: Arc<parking_lot::Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 #[cfg(target_os = "linux")]
@@ -34,7 +34,7 @@ impl LinuxHook {
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             sender: Arc::new(Mutex::new(None)),
-            hook_thread: None,
+            hook_thread: Arc::new(parking_lot::Mutex::new(None)),
         })
     }
 
@@ -159,7 +159,7 @@ impl KeyboardHook for LinuxHook {
                 };
 
                 // Get keyboard input focus
-                let window = screen.root();
+                let _window = screen.root();
 
                 // Grab keyboard (synchronous grab)
                 // This would require XKB extension for proper Unicode handling
@@ -192,7 +192,7 @@ impl KeyboardHook for LinuxHook {
             tracing::info!("Linux keyboard hook thread stopped");
         });
 
-        self.hook_thread = Some(handle);
+        *self.hook_thread.lock() = Some(handle);
         tracing::info!("Linux keyboard hook started");
         Ok(())
     }
@@ -206,7 +206,7 @@ impl KeyboardHook for LinuxHook {
         self.stop_flag.store(true, Ordering::SeqCst);
 
         // Join hook thread
-        if let Some(handle) = self.hook_thread.take() {
+        if let Some(handle) = self.hook_thread.lock().take() {
             let _ = handle.join();
         }
 
