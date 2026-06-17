@@ -121,8 +121,12 @@ jobs:
       - name: Enforce 90% line coverage gate
         run: |
           python3 - <<'PY'
-          import json, sys
-          data = json.load(open("coverage.json"))
+          import json, os, sys
+          path = "coverage.json"
+          if not os.path.exists(path) or os.path.getsize(path) == 0:
+              print("::error::coverage.json is missing or empty. Did the cargo llvm-cov step fail?")
+              sys.exit(1)
+          data = json.load(open(path))
           # cargo-llvm-cov summary JSON: top-level key "data" with per-package
           # entries; each contains "summary" with "lines", "branches", etc.
           total = data.get("data", {}).get("summary", {}).get("lines", {})
