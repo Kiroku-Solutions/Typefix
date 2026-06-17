@@ -43,6 +43,9 @@ once_cell = "1.18"
 unicode-segmentation = "1.10"
 unicode-normalization = "0.1"
 
+# System locale detection
+sys-locale = "0.3"
+
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
@@ -76,6 +79,7 @@ config = { version = "0.13", features = ["json"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 quickcheck = "1.0"
 proptest = "1.2"
+serial_test = "3"
 
 [profile.release]
 opt-level = 3

@@ -33,6 +33,13 @@ pub struct Config {
     /// Supported languages
     pub supported_languages: Vec<String>,
 
+    /// User's explicit language preference (ISO 639-1 code)
+    ///
+    /// When set, this language is used regardless of system locale detection.
+    /// Must be one of `supported_languages`. When `None`, the engine detects
+    /// the language from the system locale and falls back to `default_language`.
+    pub user_preferred_language: Option<String>,
+
     /// Logging configuration
     pub logging: LoggingConfig,
 
@@ -55,6 +62,7 @@ impl Default for Config {
             data_path: PathBuf::from("data"),
             default_language: "en".to_string(),
             supported_languages: vec!["en".to_string(), "es".to_string()],
+            user_preferred_language: None,
             logging: LoggingConfig::default(),
             buffer: BufferConfig::default(),
             language_detection: LanguageDetectionConfig::default(),
@@ -248,6 +256,15 @@ impl Config {
             )));
         }
 
+        if let Some(ref preferred) = self.user_preferred_language {
+            if !self.supported_languages.contains(preferred) {
+                return Err(ConfigError::ValidationError(format!(
+                    "user_preferred_language '{}' must be in supported languages",
+                    preferred
+                )));
+            }
+        }
+
         if self.buffer.max_size == 0 {
             return Err(ConfigError::ValidationError(
                 "Buffer max_size must be > 0".to_string(),
@@ -308,6 +325,11 @@ supported_languages:
   - "en"
   - "es"
   - "pt"
+
+# User's explicit language preference (ISO 639-1 code)
+# When set, overrides system locale detection and default_language.
+# Must be one of supported_languages. Set to null to enable auto-detection.
+user_preferred_language: null
 
 # Logging configuration
 logging:
@@ -379,6 +401,63 @@ mod tests {
             ..Config::default()
         };
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_user_preferred_language_default_none() {
+        assert_eq!(Config::default().user_preferred_language, None);
+    }
+
+    #[test]
+    fn test_user_preferred_language_valid() {
+        let config = Config {
+            user_preferred_language: Some("es".to_string()),
+            ..Config::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_user_preferred_language_invalid() {
+        let config = Config {
+            user_preferred_language: Some("fr".to_string()),
+            ..Config::default()
+        };
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("user_preferred_language"));
+    }
+
+    #[test]
+    fn test_user_preferred_language_omitted_in_json() {
+        let json = r#"{
+            "data_path": "data",
+            "default_language": "en",
+            "supported_languages": ["en", "es"]
+        }"#;
+        let config = Config::from_str(json, ConfigFormat::Json).unwrap();
+        assert_eq!(config.user_preferred_language, None);
+    }
+
+    #[test]
+    fn test_user_preferred_language_explicit_null_in_json() {
+        let json = r#"{
+            "default_language": "en",
+            "supported_languages": ["en", "es"],
+            "user_preferred_language": null
+        }"#;
+        let config = Config::from_str(json, ConfigFormat::Json).unwrap();
+        assert_eq!(config.user_preferred_language, None);
+    }
+
+    #[test]
+    fn test_user_preferred_language_serialization_roundtrip() {
+        let config = Config {
+            user_preferred_language: Some("es".to_string()),
+            ..Config::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed = Config::from_str(&json, ConfigFormat::Json).unwrap();
+        assert_eq!(parsed.user_preferred_language, Some("es".to_string()));
     }
 
     #[test]
