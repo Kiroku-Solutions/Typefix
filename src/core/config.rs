@@ -310,62 +310,44 @@ pub enum ConfigFormat {
 
 /// Default configuration file content
 impl Config {
-    /// Built-in default configuration as a YAML/JSON-like string
+    /// Built-in default configuration as JSON (since the parser uses serde_json)
     pub fn default_config_file() -> &'static str {
-        r#"# TypeFix Configuration
-
-# Data directory (relative to working directory or absolute)
-data_path: "data"
-
-# Default language (ISO 639-1 code)
-default_language: "en"
-
-# Supported languages
-supported_languages:
-  - "en"
-  - "es"
-  - "pt"
-
-# User's explicit language preference (ISO 639-1 code)
-# When set, overrides system locale detection and default_language.
-# Must be one of supported_languages. Set to null to enable auto-detection.
-user_preferred_language: null
-
-# Logging configuration
-logging:
-  level: "info"  # trace, debug, info, warn, error
-  file: null      # null = stdout only, or path to log file
-  structured: true
-
-# Buffer configuration
-buffer:
-  max_size: 64
-  normalize_unicode: true
-
-# Language detection configuration
-language_detection:
-  window_size: 5
-  confidence_threshold: 0.85
-  hysteresis_zone: 0.10
-  min_words_before_switch: 5
-  dynamic_switching: true
-
-# Correction configuration
-correction:
-  max_edit_distance: 1
-  max_corrections: 3
-  min_word_length: 2
-  case_sensitive: false
-  learn_from_user: true
-  user_errors_path: "data/user_errors.json"
-
-# Hook configuration
-hooks:
-  keyboard_enabled: true
-  mode: "system"  # system, application, disabled
-  target_app: null
-  log_keystrokes: false
-"#
+        r#"{
+  "data_path": "data",
+  "default_language": "en",
+  "supported_languages": ["en", "es", "pt"],
+  "user_preferred_language": null,
+  "logging": {
+    "level": "info",
+    "file": null,
+    "structured": true
+  },
+  "buffer": {
+    "max_size": 64,
+    "normalize_unicode": true
+  },
+  "language_detection": {
+    "window_size": 5,
+    "confidence_threshold": 0.85,
+    "hysteresis_zone": 0.10,
+    "min_words_before_switch": 5,
+    "dynamic_switching": true
+  },
+  "correction": {
+    "max_edit_distance": 1,
+    "max_corrections": 3,
+    "min_word_length": 2,
+    "case_sensitive": false,
+    "learn_from_user": true,
+    "user_errors_path": "data/user_errors.json"
+  },
+  "hooks": {
+    "keyboard_enabled": true,
+    "mode": "system",
+    "target_app": null,
+    "log_keystrokes": false
+  }
+}"#
     }
 }
 
@@ -473,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn test_yaml_parse() {
+    fn test_config_parse() {
         // Project uses JSON-only config (YAML support removed)
         // This test verifies JSON parsing still works
         let json = r#"{

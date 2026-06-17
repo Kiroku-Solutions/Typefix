@@ -29,7 +29,7 @@ fn main() -> Result<()> {
                 .long("config")
                 .value_name("PATH")
                 .help("Configuration file path")
-                .default_value("config.yaml"),
+                .default_value("config.json"),
         )
         .arg(
             clap::Arg::new("data-path")

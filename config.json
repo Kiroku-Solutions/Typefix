@@ -1,0 +1,36 @@
+{
+  "data_path": "data",
+  "default_language": "en",
+  "supported_languages": ["en", "es", "pt"],
+  "user_preferred_language": null,
+  "logging": {
+    "level": "info",
+    "file": null,
+    "structured": true
+  },
+  "buffer": {
+    "max_size": 64,
+    "normalize_unicode": true
+  },
+  "language_detection": {
+    "window_size": 5,
+    "confidence_threshold": 0.85,
+    "hysteresis_zone": 0.10,
+    "min_words_before_switch": 5,
+    "dynamic_switching": true
+  },
+  "correction": {
+    "max_edit_distance": 1,
+    "max_corrections": 3,
+    "min_word_length": 2,
+    "case_sensitive": false,
+    "learn_from_user": true,
+    "user_errors_path": "data/user_errors.json"
+  },
+  "hooks": {
+    "keyboard_enabled": true,
+    "mode": "system",
+    "target_app": null,
+    "log_keystrokes": false
+  }
+}
