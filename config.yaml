@@ -1,0 +1,48 @@
+# Typo Engine Configuration
+
+# Data directory (relative to working directory or absolute)
+data_path: "data"
+
+# Default language (ISO 639-1 code)
+default_language: "en"
+
+# Supported languages
+supported_languages:
+  - "en"
+  - "es"
+  - "pt"
+
+# Logging configuration
+logging:
+  level: "info"  # trace, debug, info, warn, error
+  file: null      # null = stdout only, or path to log file
+  structured: true
+
+# Buffer configuration
+buffer:
+  max_size: 64
+  normalize_unicode: true
+
+# Language detection configuration
+language_detection:
+  window_size: 5
+  confidence_threshold: 0.85
+  hysteresis_zone: 0.10
+  min_words_before_switch: 5
+  dynamic_switching: true
+
+# Correction configuration
+correction:
+  max_edit_distance: 1
+  max_corrections: 3
+  min_word_length: 2
+  case_sensitive: false
+  learn_from_user: true
+  user_errors_path: "data/user_errors.json"
+
+# Hook configuration
+hooks:
+  keyboard_enabled: true
+  mode: "system"  # system, application, disabled
+  target_app: null
+  log_keystrokes: false

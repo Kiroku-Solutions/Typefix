@@ -1,0 +1,54 @@
+﻿# Rust / Cargo
+/target/
+/Cargo.lock.bak
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and runtime
+*.log
+test_output.log
+agent-sessions.json
+agent-tasks.json
+
+# Internal Mavis team artifacts
+.mavis/
+*.plan.yaml
+spawn-agents.ps1
+phase3-review.yaml
+phase*-review*.yaml
+agent-*.json
+agent-*.yaml
+plans/
+
+# Local environment / secrets (NEVER commit)
+.env
+.env.local
+*.pem
+*.key
+secrets/
+config.local.yaml
+config.local.json
+config.local.toml
+
+# Test artifacts
+coverage/
+*.profraw
+*.gcda
+*.gcno
+lcov.info
+tarpaulin-report.html
+
+# Local user dictionaries (may contain sensitive data)
+data/user_errors.json
+data/user_dictionary.json

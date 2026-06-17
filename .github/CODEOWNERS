@@ -1,0 +1,69 @@
+# CODEOWNERS for TypeFix
+# Maintained by Kiroku Solutions
+
+# Default owners for everything
+*       @kiroku-solutions/maintainers
+
+# Core engine
+/src/core/           @kiroku-solutions/core-team
+/src/correction/     @kiroku-solutions/core-team
+/src/language/       @kiroku-solutions/core-team
+/src/pipeline.rs     @kiroku-solutions/core-team
+
+# Platform-specific code
+/src/hooks/          @kiroku-solutions/platform-team
+
+# Build, CI, governance
+/.github/            @kiroku-solutions/devops
+/Cargo.toml          @kiroku-solutions/core-team
+
+# Documentation
+/docs/               @kiroku-solutions/docs-team
+*.md                 @kiroku-solutions/docs-team
+
+# Security-sensitive files
+/SECURITY.md         @kiroku-solutions/security
+/LICENSE             @kiroku-solutions/legal
+/LICENSE-APACHE      @kiroku-solutions/legal
+#
+# @camilo is the human owner of the project and acts as the final
+# tie-breaker and committee placeholder.  Replace or extend individual
+# handles with the real agent identities in a production deployment.
+# See docs/governance.md for the full process.
+
+# Default owners: every file requires review by the full committee.
+*       @camilo
+
+# Core engine (Trie, Buffer, Config) — Architect + Developer lead
+/src/core/   @camilo
+
+# Language detection — Architect + QA lead
+/src/language/   @camilo
+
+# Correction engine (Damerau-Levenshtein, static map) — Developer + QA
+/src/correction/   @camilo
+
+# Platform hooks (Windows / Linux / macOS) — Security owns FFI & unsafe
+/src/hooks/   @camilo
+
+# Pipeline orchestrator — Architect owns this surface
+/src/pipeline.rs   @camilo
+
+# Memory profiling — Security + Developer
+/src/memory.rs   @camilo
+
+# Benchmarks — Developer
+/benches/   @camilo
+
+# Integration & stress tests — QA owns the gate
+/tests/   @camilo
+
+# Documentation — Architect owns the contract; QA owns examples
+/docs/   @camilo
+
+# CI/CD & governance configuration — Architect + Security
+/.github/   @camilo
+
+# Dependency manifest changes — Developer + Security
+/Cargo.toml   @camilo
+/Cargo.lock   @camilo

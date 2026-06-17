@@ -1,0 +1,21 @@
+{
+  "language": "en",
+  "stopwords": [
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+    "be", "have", "has", "had", "do", "does", "did", "will", "would",
+    "could", "should", "may", "might", "must", "shall", "can", "need",
+    "that", "this", "these", "those", "it", "its", "they", "them", "their",
+    "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
+    "all", "each", "every", "both", "few", "more", "most", "other", "some",
+    "such", "no", "nor", "not", "only", "own", "same", "so", "than",
+    "too", "very", "just", "also", "now", "here", "there", "then", "once",
+    "if", "any", "about", "into", "through", "during", "before", "after",
+    "above", "below", "up", "down", "out", "off", "over", "under",
+    "again", "further", "while", "because", "against", "between", "among",
+    "my", "your", "his", "her", "our", "its", "their", "me", "him", "us",
+    "i", "you", "he", "she", "we", "they", "myself", "yourself", "himself",
+    "herself", "itself", "ourselves", "themselves", "mine", "yours", "his",
+    "hers", "ours", "theirs", "am", "being", "having", "doing", "said", "made"
+  ]
+}

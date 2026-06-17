@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy Lints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Clippy with warnings as errors
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build (debug)
+        run: cargo build --verbose --all-targets
+
+      - name: Build (release)
+        run: cargo build --verbose --release
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run unit tests
+        run: cargo test --verbose --all-features
+
+      - name: Run integration tests
+        run: cargo test --verbose --test integration_test
+
+      - name: Run stress tests (release only)
+        run: cargo test --release --test stress_test -- --nocapture
+
+  coverage:
+    name: Coverage (>90% required)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Generate coverage summary
+        run: cargo llvm-cov --all-features --workspace --summary-only --json | tee coverage.json > /dev/null
+
+      - name: Enforce 90% line coverage gate
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("coverage.json"))
+          # cargo-llvm-cov summary JSON: top-level key "data" with per-package
+          # entries; each contains "summary" with "lines", "branches", etc.
+          total = data.get("data", {}).get("summary", {}).get("lines", {})
+          pct = total.get("percent", 0.0)
+          print(f"Line coverage: {pct:.2f}%")
+          if pct < 90.0:
+              print(f"::error::Coverage {pct:.2f}% is below the required 90% gate.")
+              sys.exit(1)
+          PY
+
+  committee-rules:
+    name: Committee Rules (zero unwrap, zero FIXME)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Detect unwrap() / FIXME / TODO in production source
+        run: |
+          set -e
+          echo "::group::Scanning for unwrap()/expect() in production code (excluding tests, benches, examples)"
+          UNWRAPS=$(rg -n --pcre2 '\.(unwrap|expect)\s*\(' \
+            --glob '!tests/**' \
+            --glob '!benches/**' \
+            --glob '!examples/**' \
+            --glob '!**/tests/**' \
+            --glob '!**/benches/**' \
+            src || true)
+          if [ -n "$UNWRAPS" ]; then
+            echo "::error::Unwrap/expect found in production code:"
+            echo "$UNWRAPS"
+            exit 1
+          fi
+          echo "No unwrap/expect found."
+
+          echo "::group::Scanning for FIXME / TODO in production code"
+          FIXMES=$(rg -n --pcre2 '\b(FIXME|TODO)\b' \
+            --glob '!tests/**' \
+            --glob '!benches/**' \
+            --glob '!examples/**' \
+            --glob '!**/tests/**' \
+            --glob '!**/benches/**' \
+            src || true)
+          if [ -n "$FIXMES" ]; then
+            echo "::error::FIXME/TODO found in production code:"
+            echo "$FIXMES"
+            exit 1
+          fi
+          echo "No FIXME/TODO found."
+
+  all-gates:
+    name: CI Gates Summary
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, build, test, coverage, committee-rules]
+    if: always()
+    steps:
+      - name: Verify all gates passed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::One or more CI gates failed."
+            exit 1
+          fi
+          echo "All CI gates passed: fmt, clippy, build, test, coverage, committee-rules."

@@ -1,0 +1,20 @@
+{
+  "language": "pt",
+  "stopwords": [
+    "o", "a", "os", "as", "um", "uma", "de", "da", "do", "das", "dos",
+    "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "sobre",
+    "entre", "ao", "aos", "que", "e", "é", "são", "era", "foram", "ser", "estar",
+    "foi", "se", "na", "em", "um", "não", "como", "mais", "mas", "ou",
+    "também", "só", "até", "já", "ainda", "mesmo", "outro", "outra",
+    "outros", "outras", "todo", "toda", "todos", "todas", "muito", "muita",
+    "muitos", "muitas", "pouco", "pouca", "bem", "mal", "melhor", "pior",
+    "qual", "quando", "onde", "quem", "porque", "como", "porque",
+    "este", "esta", "estes", "estas", "esse", "essa", "esses", "essas",
+    "aquele", "aquela", "aqueles", "aquelas", "eu", "tu", "ele", "ela",
+    "nós", "vós", "eles", "elas", "me", "te", "lhe", "nos", "vos", "lhes",
+    "meu", "minha", "meus", "minhas", "teu", "tua", "teus", "tuas",
+    "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas",
+    "aqui", "aí", "ali", "lá", "cá", "perto", "longe", "dentro", "fora",
+    "em", "por", "para", "desde", "até", "após", "antes", "durante"
+  ]
+}

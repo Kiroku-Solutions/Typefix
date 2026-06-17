@@ -1,0 +1,22 @@
+{
+  "language": "es",
+  "stopwords": [
+    "el", "la", "los", "las", "de", "del", "en", "y", "a", "al",
+    "es", "son", "era", "eran", "fue", "fueron", "ser", "estar",
+    "que", "qué", "cual", "cuál", "quien", "quién", "donde", "dónde",
+    "cuando", "cuándo", "como", "cómo", "porque", "por qué",
+    "un", "una", "unos", "unas", "lo", "alguno", "alguna", "algunos", "algunas",
+    "ningun", "ninguno", "ninguna", "todo", "toda", "todos", "todas",
+    "con", "por", "para", "sin", "sobre", "entre", "hacia", "hasta",
+    "se", "le", "les", "me", "te", "nos", "os", "mi", "tu", "su",
+    "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas",
+    "aquel", "aquella", "aquellos", "aquellas", "yo", "tú", "él", "ella",
+    "nosotros", "vosotros", "ellos", "ellas", "mío", "tuyo", "suyo",
+    "pero", "mas", "aunque", "sin embargo", "no", "sí", "también",
+    "muy", "más", "menos", "mucho", "poco", "tan", "tanto", "bastante",
+    "ya", "aún", "todavía", "ahora", "antes", "después", "siempre", "nunca",
+    "aquí", "ahí", "allí", "cerca", "lejos", "dentro", "fuera", "arriba", "abajo",
+    "cada", "otro", "otra", "demas", "diferentes", "mismo", "misma",
+    "solo", "solamente", "solo", "únicamente", "bien", "mal", "mejor", "peor"
+  ]
+}

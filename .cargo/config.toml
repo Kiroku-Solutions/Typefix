@@ -1,0 +1,27 @@
+﻿# Cross-compilation configuration for TypeFix
+# =============================================================================
+# Supported targets:
+#   - x86_64-unknown-linux-musl  (Linux static binaries)
+#   - x86_64-apple-darwin        (macOS Intel)
+#   - aarch64-apple-darwin       (macOS ARM64/Apple Silicon)
+# =============================================================================
+
+# Linux musl target - static linking for portable binaries
+[target.x86_64-unknown-linux-musl]
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-arg=-static",
+    "-C", "link-arg=-pthread",
+]
+
+# macOS x86_64 target - Intel Macs
+[target.x86_64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-mmacosx-version-min=10.15",
+]
+
+# macOS ARM64 target - Apple Silicon (M1/M2/M3)
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-mmacosx-version-min=10.15",
+]
