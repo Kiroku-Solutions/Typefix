@@ -136,24 +136,45 @@ jobs:
               print("::error::coverage.json is missing or empty. Did the cargo llvm-cov step fail?")
               sys.exit(1)
           data = json.load(open(path))
-          # cargo-llvm-cov JSON shape varies by version; handle both the
-          # wrapped form ({"data": [...]}) and the bare list form ([...]).
-          if isinstance(data, dict):
-              entries = data.get("data", [])
-          else:
-              entries = data
-          if not entries:
-              print("::error::coverage.json has no per-package entries.")
+
+          def find_lines(obj, depth=0):
+              """Recursively locate the first dict with `summary.lines.{count,covered}`."""
+              if depth > 10:
+                  return None
+              if isinstance(obj, dict):
+                  summary = obj.get("summary")
+                  if isinstance(summary, dict):
+                      lines = summary.get("lines")
+                      if isinstance(lines, dict) and "count" in lines and "covered" in lines:
+                          return lines
+                  for v in obj.values():
+                      r = find_lines(v, depth + 1)
+                      if r is not None:
+                          return r
+              elif isinstance(obj, list):
+                  for item in obj:
+                      r = find_lines(item, depth + 1)
+                      if r is not None:
+                          return r
+              return None
+
+          lines = find_lines(data)
+          if lines is None:
+              # Surface the actual shape so the next person can fix the path.
+              top = type(data).__name__
+              if isinstance(data, dict):
+                  top += " keys=" + ",".join(sorted(data.keys()))
+              elif isinstance(data, list):
+                  top += f" len={len(data)}"
+                  if data and isinstance(data[0], dict):
+                      top += " first_keys=" + ",".join(sorted(data[0].keys()))
+              print(f"::error::Could not find summary.lines in coverage.json (top-level: {top}).")
               sys.exit(1)
-          # Aggregate line coverage across all packages.
-          total_count = 0
-          total_covered = 0
-          for entry in entries:
-              lines = entry.get("summary", {}).get("lines", {})
-              total_count += lines.get("count", 0)
-              total_covered += lines.get("covered", 0)
-          pct = (total_covered / total_count * 100.0) if total_count else 0.0
-          print(f"Line coverage: {pct:.2f}%")
+
+          count = lines.get("count", 0)
+          covered = lines.get("covered", 0)
+          pct = (covered / count * 100.0) if count else 0.0
+          print(f"Line coverage: {pct:.2f}% ({covered}/{count} lines)")
           if pct < 90.0:
               print(f"::error::Coverage {pct:.2f}% is below the required 90% gate.")
               sys.exit(1)
