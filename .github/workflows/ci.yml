@@ -59,6 +59,9 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
+      - name: Install system dependencies (libxcb for Linux hook)
+        run: sudo apt-get update && sudo apt-get install -y libxcb1-dev
+
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -79,6 +82,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+
+      - name: Install system dependencies (libxcb for Linux hook)
+        run: sudo apt-get update && sudo apt-get install -y libxcb1-dev
 
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -103,6 +109,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+
+      - name: Install system dependencies (libxcb for Linux hook)
+        run: sudo apt-get update && sudo apt-get install -y libxcb1-dev
 
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
