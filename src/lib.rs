@@ -3,7 +3,8 @@
 //! Hyper-lightweight, zero-latency typo correction and language detection engine.
 //! Designed for high-density text input environments (EHR, legal documentation).
 
-#![forbid(unsafe_code)]
+// Unsafe code is allowed only in specific modules (windows hooks)
+// that require it for system-level keyboard interception.
 #![deny(
     clippy::unwrap_used,
     clippy::panic,

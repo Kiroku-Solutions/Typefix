@@ -136,6 +136,9 @@ pub trait KeyboardHook: Send {
 
     /// Get event receiver
     fn receiver(&self) -> &Receiver<HookEvent>;
+
+    /// Send text keystrokes to the system
+    fn send_text(&self, text: &str) -> Result<(), HookError>;
 }
 
 /// Hook errors
@@ -156,6 +159,9 @@ pub enum HookError {
     /// A platform-specific error occurred while running the hook
     #[error("Platform error: {0}")]
     PlatformError(String),
+    /// Keystroke injection failed
+    #[error("Keystroke injection failed: {0}")]
+    InjectionFailed(String),
 }
 
 /// Create platform-specific hook
@@ -244,6 +250,10 @@ impl KeyboardHook for MockHook {
 
     fn receiver(&self) -> &Receiver<HookEvent> {
         &self.receiver
+    }
+
+    fn send_text(&self, _text: &str) -> Result<(), HookError> {
+        Ok(())
     }
 }
 

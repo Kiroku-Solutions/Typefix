@@ -9,7 +9,11 @@
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+use typefix::hooks::platform::{KeyEvent, SpecialKey};
+use typefix::pipeline::TypeFixPipeline;
 
 fn main() -> Result<()> {
     // Parse CLI arguments
@@ -79,7 +83,6 @@ fn main() -> Result<()> {
 }
 
 fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
-    // Load configuration
     let config_path = matches
         .get_one::<String>("config")
         .ok_or_else(|| anyhow::anyhow!("Missing --config argument"))?;
@@ -97,15 +100,94 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
         ..config
     };
 
-    // Initialize engine
     typefix::init(&config)?;
 
-    tracing::info!("TypeFix started successfully");
-    tracing::info!("Press Ctrl+C to stop");
+    if matches!(
+        config.hooks.mode,
+        typefix::core::config::HookMode::Disabled
+    ) {
+        tracing::info!("Hook mode disabled - running in API-only mode");
+        tracing::info!("Press Enter to exit");
+        use std::io::{self, Read};
+        let _ = io::stdin().read(&mut [0u8]);
+        tracing::info!("Shutting down...");
+        return Ok(());
+    }
 
-    // Wait for shutdown signal
-    use std::io::{self, Read};
-    let _ = io::stdin().read(&mut [0u8]);
+    tracing::info!("Initializing Windows keyboard hook...");
+
+    let hook_config = typefix::hooks::platform::HookConfig {
+        enabled: config.hooks.keyboard_enabled,
+        log_keystrokes: config.hooks.log_keystrokes,
+        mode: match config.hooks.mode {
+            typefix::core::config::HookMode::System => {
+                typefix::hooks::platform::HookMode::System
+            }
+            typefix::core::config::HookMode::Application => {
+                typefix::hooks::platform::HookMode::Application
+            }
+            typefix::core::config::HookMode::Disabled => {
+                typefix::hooks::platform::HookMode::Disabled
+            }
+        },
+    };
+
+    let hook = typefix::hooks::platform::create_hook(hook_config)
+        .context("Failed to create keyboard hook")?;
+    let hook = Arc::new(hook);
+
+    if let Err(e) = hook.start() {
+        tracing::error!("Failed to start keyboard hook: {}", e);
+        tracing::info!("Press Enter to exit");
+        use std::io::{self, Read};
+        let _ = io::stdin().read(&mut [0u8]);
+        tracing::info!("Shutting down...");
+        return Ok(());
+    }
+
+    tracing::info!("TypeFix started successfully - monitoring keyboard input");
+
+    let pipeline = TypeFixPipeline::simple();
+    let hook_for_sending = Arc::clone(&hook);
+
+    let receiver = hook.receiver();
+    loop {
+        let event = match receiver.recv() {
+            Ok(event) => event,
+            Err(_) => {
+                tracing::info!("Hook receiver disconnected, shutting down...");
+                break;
+            }
+        };
+
+        match event.event {
+            KeyEvent::Char(ch) => {
+                if let Some(result) = pipeline.push(ch) {
+                        if let Some(corrected) = result.corrected {
+                            tracing::info!(
+                                "Correction: '{}' -> '{}'",
+                                result.original,
+                                corrected
+                            );
+                            let backspaces = result.original.chars().count();
+                            for _ in 0..backspaces {
+                                let _ = hook_for_sending.send_text("\x08");
+                            }
+                            let _ = hook_for_sending.send_text(&corrected);
+                        }
+                }
+            }
+            KeyEvent::Special(SpecialKey::Backspace) => {
+                pipeline.clear();
+            }
+            KeyEvent::Special(
+                SpecialKey::Enter | SpecialKey::Tab | SpecialKey::Escape,
+            ) => {
+                pipeline.clear();
+            }
+            KeyEvent::Special(_) | KeyEvent::Control(_) => {}
+        }
+    }
 
     tracing::info!("Shutting down...");
     Ok(())
