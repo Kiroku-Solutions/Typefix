@@ -440,10 +440,17 @@ mod tests {
 
     #[test]
     fn test_data_dir_absolute() {
+        // Use a path that is absolute on the current platform:
+        // "C:/data" on Windows, "/tmp/data" on Unix-like systems.
+        #[cfg(windows)]
+        let abs_path = PathBuf::from("C:/data");
+        #[cfg(not(windows))]
+        let abs_path = PathBuf::from("/tmp/data");
+
         let config = Config {
-            data_path: PathBuf::from("C:/data"),
+            data_path: abs_path.clone(),
             ..Config::default()
         };
-        assert_eq!(config.data_dir(), PathBuf::from("C:/data"));
+        assert_eq!(config.data_dir(), abs_path);
     }
 }
