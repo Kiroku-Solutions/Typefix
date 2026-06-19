@@ -1,33 +1,33 @@
 # TypeFix WebAssembly (WASM) Integration Guide
 
-¡Bienvenido a la guía de integración web de TypeFix! Con esta guía podrás llevar la potencia del motor de corrección ultrarrápido y de auto-switch inteligente directamente al navegador de tus usuarios, sin necesidad de un backend o llamadas a API.
+Welcome to the TypeFix web integration guide! With this guide, you will be able to bring the power of the ultra-fast correction engine and intelligent auto-switch directly to your users' browsers, without the need for a backend or API calls.
 
-TypeFix se compila a WebAssembly (WASM), permitiendo a tu aplicación JavaScript (React, Vue, Vanilla) inicializar un pipeline de procesamiento de texto con una latencia de 0 milisegundos.
+TypeFix compiles to WebAssembly (WASM), allowing your JavaScript application (React, Vue, Vanilla) to initialize a text processing pipeline with 0 milliseconds of latency.
 
 ---
 
-## 1. Instalación y Compilación
+## 1. Installation and Compilation
 
-Primero, debemos empaquetar TypeFix como un paquete NPM. Para ello utilizamos `wasm-pack`:
+First, we need to package TypeFix as an NPM package. To do this, we use `wasm-pack`:
 
 ```bash
-# Instala wasm-pack si no lo tienes
+# Install wasm-pack if you don't have it
 cargo install wasm-pack
 
-# Compila el paquete para la web
+# Compile the package for the web
 wasm-pack build --target web --out-name typefix-wasm --out-dir pkg
 ```
 
-Esto generará una carpeta `/pkg` con los archivos `.js` y `.wasm` listos para usar en tu proyecto web.
+This will generate a `/pkg` folder with the `.js` and `.wasm` files ready to use in your web project.
 
 ---
 
-## 2. Inyección de Diccionarios y Stopwords
+## 2. Dictionary and Stopwords Injection
 
-En el entorno web, no existe el archivo local `config.json`. En su lugar, el Front-End es el responsable de descargar los recursos (Diccionarios FST y listas JSON) mediante llamadas `fetch()`.
+In the web environment, the local `config.json` file does not exist. Instead, the Front-End is responsible for downloading resources (FST Dictionaries and JSON lists) using `fetch()` calls.
 
-### Estructura de archivos estáticos
-Sube tus archivos de idioma al directorio público de tu servidor o CDN:
+### Static Files Structure
+Upload your language files to the public directory of your server or CDN:
 ```text
 /public
   ├── dictionaries/
@@ -39,76 +39,76 @@ Sube tus archivos de idioma al directorio público de tu servidor o CDN:
 ```
 
 > [!TIP]
-> **Rendimiento**
-> Los archivos `.fst` son binarios extremadamente compactos. Un diccionario de 600,000 palabras en español suele pesar solo 1.5MB. ¡Cargarán instantáneamente en la web!
+> **Performance**
+> `.fst` files are extremely compact binaries. A dictionary of 600,000 words in Spanish typically weighs only 1.5MB. They will load instantly on the web!
 
 ---
 
-## 3. Ejemplo Práctico de Inicialización (JavaScript)
+## 3. Practical Initialization Example (JavaScript)
 
-El siguiente código demuestra cómo importar el paquete, descargar los idiomas y escuchar un área de texto:
+The following code demonstrates how to import the package, download languages, and listen to a text area:
 
 ```javascript
 import init, { TypeFixWeb } from './pkg/typefix_wasm.js';
 
 async function startTypeFix() {
-    // 1. Inicializar el motor WASM
+    // 1. Initialize the WASM engine
     await init();
 
-    // 2. Crear la instancia. (auto_correct=true, detect_language=true, buffer_size=64)
+    // 2. Create the instance. (auto_correct=true, detect_language=true, buffer_size=64)
     const typefix = new TypeFixWeb(true, true, 64);
 
-    // 3. Descargar e inyectar el diccionario en Español
+    // 3. Download and inject the Spanish dictionary
     const esDictResponse = await fetch('/dictionaries/es.fst');
     const esDictBuffer = await esDictResponse.arrayBuffer();
     typefix.loadDictionary('es', new Uint8Array(esDictBuffer));
 
-    // 4. Descargar e inyectar Stopwords (para el Auto-Switch)
+    // 4. Download and inject Stopwords (for Auto-Switch)
     const esStopwordsResponse = await fetch('/stopwords/es.json');
     const esStopwordsJson = await esStopwordsResponse.text();
     typefix.loadStopwords('es', esStopwordsJson);
     
-    // Repite los pasos 3 y 4 para el Inglés ('en')...
+    // Repeat steps 3 and 4 for English ('en')...
 
-    // 5. Configurar el idioma inicial
+    // 5. Set the initial language
     typefix.setLanguage('es');
 
-    console.log("¡TypeFix inicializado correctamente en el navegador!");
+    console.log("TypeFix successfully initialized in the browser!");
     return typefix;
 }
 ```
 
 ---
 
-## 4. Conectar TypeFix a un Editor de Texto (Input)
+## 4. Connecting TypeFix to a Text Editor (Input)
 
-Una vez tienes la instancia `typefix`, solo necesitas interceptar las pulsaciones del usuario y pasárselas al motor.
+Once you have the `typefix` instance, you only need to intercept user keystrokes and pass them to the engine.
 
 ```javascript
 const textarea = document.getElementById('my-editor');
 let typefixEngine = await startTypeFix();
 
 textarea.addEventListener('keypress', (event) => {
-    // Evitar teclas de control o Enter
+    // Ignore control keys or Enter
     if (event.key.length !== 1) return;
 
-    // Procesar el caracter en TypeFix
+    // Process the character in TypeFix
     const resultJsonStr = typefixEngine.pushChar(event.key);
 
     if (resultJsonStr) {
         const result = JSON.parse(resultJsonStr);
         
-        // Si TypeFix detectó un cambio de idioma
+        // If TypeFix detected a language change
         if (result.detected_language) {
-            console.log(`🌍 Auto-Switch activado: ${result.detected_language.code} (Confianza: ${result.detected_language.confidence})`);
+            console.log(`🌍 Auto-Switch activated: ${result.detected_language.code} (Confidence: ${result.detected_language.confidence})`);
         }
 
-        // Si TypeFix realizó una corrección
+        // If TypeFix performed a correction
         if (result.corrected) {
-            console.log(`✨ Corrección automática: ${result.original} -> ${result.corrected}`);
+            console.log(`✨ Automatic correction: ${result.original} -> ${result.corrected}`);
             
-            // Lógica para reemplazar la palabra en el textarea
-            // (Reemplazar la última palabra escrita por result.corrected)
+            // Logic to replace the word in the textarea
+            // (Replace the last typed word with result.corrected)
             replaceLastWordInTextarea(textarea, result.original, result.corrected);
         }
     }
@@ -125,11 +125,11 @@ function replaceLastWordInTextarea(element, original, corrected) {
 
 ---
 
-## 5. Arquitectura Dinámica y de Interfaz
+## 5. Dynamic Interface Architecture
 
-### Deshacerte del `config.json`
-Al construir tu landing page o Dashboard, en lugar de leer un archivo oculto, tú le ofrecerás al usuario botones o *switches* en pantalla (Ej. "Activar Autocorrector", "Idioma: Inglés"). Cuando el usuario haga click, tú simplemente llamarás a `typefix.setLanguage('en')` o inicializarás el objeto con nuevas reglas.
+### Getting rid of `config.json`
+When building your landing page or Dashboard, instead of reading a hidden file, you will offer the user buttons or switches on the screen (e.g., "Enable Auto-correct", "Language: English"). When the user clicks, you will simply call `typefix.setLanguage('en')` or initialize the object with new rules.
 
 > [!IMPORTANT]
-> **Privacidad Total**
-> Una de las mayores promesas de valor de TypeFix es la privacidad. Como el procesamiento ocurre al 100% dentro del navegador usando WASM, lo que el usuario escribe **nunca viaja a tus servidores**. Todo sucede localmente.
+> **Total Privacy**
+> One of TypeFix's greatest value propositions is privacy. Since processing occurs 100% within the browser using WASM, what the user types **never travels to your servers**. Everything happens locally.
