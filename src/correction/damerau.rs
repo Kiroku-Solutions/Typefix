@@ -159,6 +159,10 @@ impl DamerauLevenshtein {
         let len1 = s1.len();
         let len2 = s2.len();
 
+        if (len1 + 1).saturating_mul(len2 + 1) > 1_000_000 {
+            return max_dist + 1;
+        }
+
         // Get or create matrix
         let mut matrix = self.get_matrix(len1 + 1, len2 + 1);
 

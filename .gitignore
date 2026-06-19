@@ -1,7 +1,7 @@
-﻿# Rust / Cargo
+# Rust / Cargo
 /target/
 /Cargo.lock.bak
-**/*.rs.bk
+**/*.rs.bak
 
 # IDE
 .idea/

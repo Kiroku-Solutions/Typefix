@@ -9,7 +9,6 @@
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use typefix::hooks::platform::{KeyEvent, SpecialKey};
@@ -134,7 +133,6 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
 
     let hook = typefix::hooks::platform::create_hook(hook_config)
         .context("Failed to create keyboard hook")?;
-    let hook = Arc::new(hook);
 
     if let Err(e) = hook.start() {
         tracing::error!("Failed to start keyboard hook: {}", e);
@@ -147,8 +145,21 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
 
     tracing::info!("TypeFix started successfully - monitoring keyboard input");
 
-    let pipeline = TypeFixPipeline::simple();
-    let hook_for_sending = Arc::clone(&hook);
+    let pipeline = TypeFixPipeline::new(typefix::pipeline::PipelineConfig::default());
+    {
+        let state_arc = typefix::get_state();
+        let state = state_arc.read();
+        for (lang, dict) in &state.dictionaries {
+            pipeline.add_dictionary(lang, std::sync::Arc::clone(dict));
+        }
+        for (lang, sw) in &state.stopwords {
+            pipeline.add_stopwords(lang, std::sync::Arc::clone(sw));
+        }
+        for (lang, em) in &state.error_maps {
+            pipeline.add_error_map(lang, std::sync::Arc::clone(em));
+        }
+        pipeline.set_language(&state.active_language);
+    }
 
     let receiver = hook.receiver();
     loop {
@@ -169,11 +180,16 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                                 result.original,
                                 corrected
                             );
-                            let backspaces = result.original.chars().count();
+                            let backspaces = result.original.chars().count() + 1;
                             for _ in 0..backspaces {
-                                let _ = hook_for_sending.send_text("\x08");
+                                if let Err(e) = hook.send_text("\x08") {
+                                    tracing::error!("Failed to send backspace: {}", e);
+                                }
                             }
-                            let _ = hook_for_sending.send_text(&corrected);
+                            let corrected_with_delimiter = format!("{}{}", corrected, ch);
+                            if let Err(e) = hook.send_text(&corrected_with_delimiter) {
+                                tracing::error!("Failed to send correction text: {}", e);
+                            }
                         }
                 }
             }
@@ -183,7 +199,8 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
             KeyEvent::Special(
                 SpecialKey::Enter | SpecialKey::Tab | SpecialKey::Escape,
             ) => {
-                pipeline.clear();
+                // Push a space to force delimiter extraction
+                let _ = pipeline.push(' ');
             }
             KeyEvent::Special(_) | KeyEvent::Control(_) => {}
         }
@@ -201,7 +218,23 @@ fn run_repl() -> Result<()> {
     println!("╚══════════════════════════════════════╝");
     println!("Type text to see corrections. Press Ctrl+D to exit.\n");
 
-    let pipeline = TypeFixPipeline::simple();
+    let config = typefix::core::config::Config::default();
+    let _ = typefix::init(&config);
+    let pipeline = TypeFixPipeline::new(typefix::pipeline::PipelineConfig::default());
+    {
+        let state_arc = typefix::get_state();
+        let state = state_arc.read();
+        for (lang, dict) in &state.dictionaries {
+            pipeline.add_dictionary(lang, std::sync::Arc::clone(dict));
+        }
+        for (lang, sw) in &state.stopwords {
+            pipeline.add_stopwords(lang, std::sync::Arc::clone(sw));
+        }
+        for (lang, em) in &state.error_maps {
+            pipeline.add_error_map(lang, std::sync::Arc::clone(em));
+        }
+        pipeline.set_language(&state.active_language);
+    }
 
     // Subscribe to events
     pipeline.on_event(|event| match event {

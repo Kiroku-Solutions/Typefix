@@ -41,9 +41,6 @@ impl TrieNode {
 
 /// Trie structure for efficient prefix and exact-match lookups
 ///
-/// # Type Parameters
-/// * `K` - Key type for storing additional metadata at word endings
-///
 /// # Guarantees
 /// * Immutable after construction - safe for concurrent reads
 /// * O(m) lookup where m = word length
@@ -52,6 +49,8 @@ impl TrieNode {
 pub struct Trie {
     root: TrieNode,
     word_count: usize,
+    #[serde(skip)]
+    all_words_cache: std::sync::OnceLock<Vec<(String, u64)>>,
 }
 
 impl Trie {
@@ -74,6 +73,7 @@ impl Trie {
     /// assert!(trie.search("hola").is_some());
     /// ```
     pub fn insert(&mut self, word: &str, frequency: u64) {
+        self.all_words_cache = std::sync::OnceLock::new();
         let mut current = &mut self.root;
         for ch in word.chars() {
             current.children.entry(ch).or_default();
@@ -186,10 +186,12 @@ impl Trie {
 
     /// Get all words in the Trie
     pub fn all_words(&self) -> Vec<(String, u64)> {
-        let mut results = Vec::new();
-        self._collect_words(&self.root, "", &mut results);
-        results.sort_by_key(|b| std::cmp::Reverse(b.1));
-        results
+        self.all_words_cache.get_or_init(|| {
+            let mut results = Vec::new();
+            self._collect_words(&self.root, "", &mut results);
+            results.sort_by_key(|b| std::cmp::Reverse(b.1));
+            results
+        }).clone()
     }
 
     /// Find words within maximum edit distance (Damerau-Levenshtein)

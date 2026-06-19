@@ -3,7 +3,7 @@
 //! Uses CGEventTap for keystroke capture. Requires Accessibility permissions.
 
 #[cfg(target_os = "macos")]
-use super::{HookConfig, HookError, HookEvent, KeyboardHook, Modifiers, SpecialKey};
+use super::{HookConfig, HookError, HookEvent, KeyboardHook, KeyEvent, Modifiers, SpecialKey};
 #[cfg(target_os = "macos")]
 use core_graphics::base::CGFloat;
 #[cfg(target_os = "macos")]
@@ -30,6 +30,7 @@ pub struct MacOSHook {
     running: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     sender: Arc<Mutex<Option<Sender<HookEvent>>>>,
+    receiver: Receiver<HookEvent>,
     hook_thread: Option<thread::JoinHandle<()>>,
     event_tap: Option<CGEventTap>,
 }
@@ -43,11 +44,13 @@ static LOG_KEYSTROKES: OnceLock<AtomicBool> = OnceLock::new();
 impl MacOSHook {
     /// Create a new macOS hook
     pub fn new(config: HookConfig) -> Result<Self, HookError> {
+        let (tx, rx) = channel();
         Ok(Self {
             config,
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
-            sender: Arc::new(Mutex::new(None)),
+            sender: Arc::new(Mutex::new(Some(tx))),
+            receiver: rx,
             hook_thread: None,
             event_tap: None,
         })
@@ -155,22 +158,17 @@ impl KeyboardHook for MacOSHook {
             return Err(HookError::AlreadyRunning);
         }
 
-        let (tx, _rx) = channel::<HookEvent>();
+        let tx = self.sender.lock().unwrap().clone().ok_or(HookError::NotRunning)?;
 
         // Store sender globally for event callback
         EVENT_SENDER.get_or_init(|| Arc::new(Mutex::new(None)));
         if let Some(global_sender) = EVENT_SENDER.get() {
             if let Ok(mut guard) = global_sender.lock() {
-                *guard = Some(tx.clone());
+                *guard = Some(tx);
             }
         }
 
         LOG_KEYSTROKES.get_or_init(|| AtomicBool::new(self.config.log_keystrokes));
-
-        // Store sender
-        if let Ok(mut guard) = self.sender.lock() {
-            *guard = Some(tx);
-        }
 
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
@@ -184,24 +182,23 @@ impl KeyboardHook for MacOSHook {
             // CGEventTap requires Accessibility permissions
             // For simplicity, this demonstrates the structure without actual tap
 
-            /*
-            // Full implementation would use:
             let event_mask =
                 (1 << CGEventType::KeyDown as u64) |
                 (1 << CGEventType::KeyUp as u64) |
                 (1 << CGEventType::FlagsChanged as u64);
 
             let tap = CGEventTap::new(
-                0, // HID system
-                1, // Left only
+                core_graphics::event::CGEventTapLocation::HID,
+                core_graphics::event::CGEventTapPlacement::HeadInsertEventTap,
+                core_graphics::event::CGEventTapOptions::DefaultTap,
                 event_mask,
                 |proxy, event_type, event| {
                     // Process keyboard event
                     let keycode = event.get_integer_value_field(
-                        core_graphics::event::kCGKeyboardEventKeycode
+                        core_graphics::event::EventField::KEYBOARD_EVENT_KEYCODE
                     ) as CGKeyCode;
 
-                    let flags = event.flags() as CGFloat;
+                    let flags = event.get_flags() as CGFloat;
                     let mods = MacOSHook::flags_to_modifiers(flags);
 
                     let timestamp = std::time::SystemTime::now()
@@ -220,21 +217,34 @@ impl KeyboardHook for MacOSHook {
                                 if LOG_KEYSTROKES.get().map(|f| f.load(Ordering::SeqCst)).unwrap_or(false) {
                                     tracing::debug!("Key: {:?}", hook_event);
                                 }
+                                if let Some(global_sender) = EVENT_SENDER.get() {
+                                    if let Ok(guard) = global_sender.lock() {
+                                        if let Some(tx) = &*guard {
+                                            let _ = tx.send(hook_event);
+                                        }
+                                    }
+                                }
                             } else if let Some(special) = MacOSHook::keycode_to_special(keycode) {
                                 let hook_event = HookEvent {
                                     event: KeyEvent::Special(special),
                                     timestamp,
                                     modifiers: mods,
                                 };
+                                if let Some(global_sender) = EVENT_SENDER.get() {
+                                    if let Ok(guard) = global_sender.lock() {
+                                        if let Some(tx) = &*guard {
+                                            let _ = tx.send(hook_event);
+                                        }
+                                    }
+                                }
                             }
                         }
                         _ => {}
                     }
 
-                    Some(event)
+                    Some(event.clone())
                 },
             );
-            */
 
             while !stop_flag.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_millis(10));
@@ -286,13 +296,7 @@ impl KeyboardHook for MacOSHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        #[expect(
-            clippy::panic,
-            reason = "stub: skeleton does not yet implement event receiver; remove when implemented"
-        )]
-        {
-            panic!("receiver() called on MacOSHook - not implemented in this skeleton")
-        }
+        &self.receiver
     }
 }
 
@@ -305,7 +309,10 @@ impl Drop for MacOSHook {
 
 // Stub implementation for non-macOS platforms
 #[cfg(not(target_os = "macos"))]
-pub struct MacOSHook;
+#[allow(missing_debug_implementations)]
+pub struct MacOSHook {
+    receiver: Receiver<HookEvent>,
+}
 
 #[cfg(not(target_os = "macos"))]
 impl MacOSHook {
@@ -336,12 +343,6 @@ impl KeyboardHook for MacOSHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        #[expect(
-            clippy::panic,
-            reason = "stub implementation for non-macOS builds; never actually called"
-        )]
-        {
-            panic!("receiver() called on stub MacOSHook")
-        }
+        &self.receiver
     }
 }

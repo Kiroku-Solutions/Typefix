@@ -9,8 +9,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
 use std::sync::mpsc::{channel, Receiver, Sender};
-#[cfg(target_os = "windows")]
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(target_os = "windows")]
 use std::thread;
 
@@ -18,14 +17,15 @@ use std::thread;
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, INPUT, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    GetAsyncKeyState, INPUT, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, SendInput, VK_BACK, VK_CAPITAL, VK_CONTROL,
-    VK_LSHIFT, VK_MENU as VK_ALT, VK_RCONTROL, VK_RETURN, VK_RSHIFT, VK_SHIFT,
-    VIRTUAL_KEY,
+    VK_LSHIFT, VK_LMENU, VK_RMENU, VK_RCONTROL, VK_RETURN, VK_RSHIFT, VK_SHIFT,
 };
 #[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::GetCurrentThreadId;
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, PeekMessageW, TranslateMessage, MSG, WH_KEYBOARD_LL,
+    CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WH_KEYBOARD_LL,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -40,13 +40,15 @@ type HookThread = Arc<Mutex<Option<thread::JoinHandle<()>>>>;
 
 /// Windows-specific keyboard hook using WH_KEYBOARD_LL
 #[cfg(target_os = "windows")]
+#[derive(Debug)]
 pub struct WindowsHook {
     config: HookConfig,
     running: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     sender: Arc<Mutex<Option<Sender<HookEvent>>>>,
-    receiver: Option<Receiver<HookEvent>>,
+    receiver: Receiver<HookEvent>,
     hook_thread: HookThread,
+    native_thread_id: Arc<std::sync::atomic::AtomicU32>,
 }
 
 #[cfg(target_os = "windows")]
@@ -60,8 +62,9 @@ impl WindowsHook {
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             sender: Arc::new(Mutex::new(Some(tx))),
-            receiver: Some(rx),
+            receiver: rx,
             hook_thread: Arc::new(Mutex::new(None)),
+            native_thread_id: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         })
     }
 
@@ -74,8 +77,8 @@ impl WindowsHook {
                 || unsafe { GetAsyncKeyState(VK_RSHIFT.0 as i32) } < 0,
             ctrl: unsafe { GetAsyncKeyState(VK_CONTROL.0 as i32) } < 0
                 || unsafe { GetAsyncKeyState(VK_RCONTROL.0 as i32) } < 0,
-            alt: unsafe { GetAsyncKeyState(VK_ALT.0 as i32) } < 0
-                || unsafe { GetAsyncKeyState(VK_ALT.0 as i32) } < 0,
+            alt: unsafe { GetAsyncKeyState(VK_LMENU.0 as i32) } < 0
+                || unsafe { GetAsyncKeyState(VK_RMENU.0 as i32) } < 0,
             caps_lock: unsafe { GetAsyncKeyState(VK_CAPITAL.0 as i32) } != 0,
         }
     }
@@ -139,6 +142,7 @@ impl WindowsHook {
             0xBC => Some(if shifted { '<' } else { ',' }),
             0xBB => Some(if shifted { '>' } else { '.' }),
             0x32 => Some(if shifted { '@' } else { '2' }),
+            0x20 => Some(' '),
             _ => None,
         }
     }
@@ -295,17 +299,28 @@ impl KeyboardHook for WindowsHook {
         let stop_flag = Arc::clone(&self.stop_flag);
         let log_keystrokes = self.config.log_keystrokes;
 
-        // Get sender from self.sender
-        let sender = self.sender.lock()
+        let tx = self.sender.lock()
             .map_err(|_| HookError::InitFailed("lock poisoned".into()))?
             .clone()
             .ok_or_else(|| HookError::InitFailed("sender not initialized".into()))?;
+
+        HOOK_SENDER.get_or_init(|| Mutex::new(None));
+        if let Some(mutex) = HOOK_SENDER.get() {
+            if let Ok(mut guard) = mutex.lock() {
+                *guard = Some(tx);
+            }
+        }
+        HOOK_LOG_KEYSTROKES.get_or_init(|| AtomicBool::new(log_keystrokes));
+
+        let native_thread_id = Arc::clone(&self.native_thread_id);
 
         // Spawn hook thread
         let handle = thread::spawn(move || {
             tracing::info!("Windows keyboard hook thread started");
 
             unsafe {
+                native_thread_id.store(GetCurrentThreadId(), Ordering::SeqCst);
+
                 let hook_result = SetWindowsHookExW(
                     WH_KEYBOARD_LL,
                     Some(keyboard_hook_proc as unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT),
@@ -318,24 +333,15 @@ impl KeyboardHook for WindowsHook {
                         tracing::info!("Windows keyboard hook installed successfully");
                         running.store(true, Ordering::SeqCst);
 
-                        // Message loop - use PeekMessage with timeout
+                        // Message loop - use GetMessage to avoid busy waiting and allow hook callbacks
                         let mut msg: MSG = MSG::default();
-                        loop {
-                            if stop_flag.load(Ordering::SeqCst) {
-                                tracing::info!("Stop flag set, exiting message loop");
+                        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                            if stop_flag.load(Ordering::SeqCst) || msg.message == windows::Win32::UI::WindowsAndMessaging::WM_QUIT {
+                                tracing::info!("Stop flag set or WM_QUIT received, exiting message loop");
                                 break;
                             }
-
-                            // Poll for messages with short timeout
-                            if PeekMessageW(&mut msg, None, 0, 0, windows::Win32::UI::WindowsAndMessaging::PM_REMOVE).as_bool() {
-                                if msg.message == windows::Win32::UI::WindowsAndMessaging::WM_QUIT {
-                                    tracing::info!("WM_QUIT received");
-                                    break;
-                                }
-                                let _ = TranslateMessage(&msg);
-                            } else {
-                                thread::sleep(std::time::Duration::from_millis(10));
-                            }
+                            let _ = TranslateMessage(&msg);
+                            let _ = DispatchMessageW(&msg);
                         }
 
                         let _ = UnhookWindowsHookEx(hook_handle);
@@ -347,6 +353,7 @@ impl KeyboardHook for WindowsHook {
                 }
             }
 
+            native_thread_id.store(0, Ordering::SeqCst);
             running.store(false, Ordering::SeqCst);
             tracing::info!("Windows keyboard hook thread stopped");
         });
@@ -373,6 +380,19 @@ impl KeyboardHook for WindowsHook {
         tracing::info!("Stopping Windows keyboard hook");
         self.stop_flag.store(true, Ordering::SeqCst);
 
+        // Wake up the message loop so it can exit
+        let tid = self.native_thread_id.load(Ordering::SeqCst);
+        if tid != 0 {
+            unsafe {
+                let _ = PostThreadMessageW(
+                    tid,
+                    windows::Win32::UI::WindowsAndMessaging::WM_QUIT,
+                    WPARAM(0),
+                    LPARAM(0)
+                );
+            }
+        }
+
         if let Ok(mut thread_guard) = self.hook_thread.lock() {
             if let Some(handle) = thread_guard.take() {
                 let _ = handle.join();
@@ -392,7 +412,7 @@ impl KeyboardHook for WindowsHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        self.receiver.as_ref().expect("receiver not initialized")
+        &self.receiver
     }
 
     fn send_text(&self, text: &str) -> Result<(), HookError> {
@@ -409,58 +429,74 @@ impl Drop for WindowsHook {
 
 // Static storage for hook callback
 #[cfg(target_os = "windows")]
-static mut HOOK_SENDER: Option<Sender<HookEvent>> = None;
+static HOOK_SENDER: OnceLock<Mutex<Option<Sender<HookEvent>>>> = OnceLock::new();
 #[cfg(target_os = "windows")]
-static mut HOOK_LOG_KEYSTROKES: bool = false;
+static HOOK_LOG_KEYSTROKES: OnceLock<AtomicBool> = OnceLock::new();
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 {
-        let kb_struct = *(lparam.0 as *const KBDLLHOOKSTRUCT);
+    let result = std::panic::catch_unwind(|| {
+        if code >= 0 {
+            let kb_struct = *(lparam.0 as *const KBDLLHOOKSTRUCT);
 
-        let vk_code = kb_struct.vkCode;  // u32
-        let flags = kb_struct.flags;     // KBDLLHOOKSTRUCT_FLAGS
+            let vk_code = kb_struct.vkCode;  // u32
+            let flags = kb_struct.flags;     // KBDLLHOOKSTRUCT_FLAGS
 
-        let is_keyup = (flags.0 & LLKHF_UP.0) != 0;
+            let is_keyup = (flags.0 & LLKHF_UP.0) != 0;
 
-        let modifiers = WindowsHook::get_modifiers();
+            let modifiers = WindowsHook::get_modifiers();
 
-        let event = if is_keyup {
-            // On keyup, emit backspace for delete behavior
-            if vk_code == VK_BACK.0 as u32 {
-                KeyEvent::Special(SpecialKey::Backspace)
+            let event = if is_keyup {
+                // On keyup, emit backspace for delete behavior
+                if vk_code == VK_BACK.0 as u32 {
+                    KeyEvent::Special(SpecialKey::Backspace)
+                } else {
+                    // Skip keyup for regular characters
+                    return CallNextHookEx(HHOOK::default(), code, wparam, lparam);
+                }
             } else {
-                // Skip keyup for regular characters
-                return CallNextHookEx(HHOOK::default(), code, wparam, lparam);
-            }
-        } else {
-            // Keydown
-            if let Some(special) = WindowsHook::vk_to_special(vk_code) {
-                KeyEvent::Special(special)
-            } else if let Some(ch) = WindowsHook::vk_to_char(vk_code, modifiers.shift, modifiers.caps_lock) {
-                KeyEvent::Char(ch)
-            } else {
-                return CallNextHookEx(HHOOK::default(), code, wparam, lparam);
-            }
-        };
+                // Keydown
+                if let Some(special) = WindowsHook::vk_to_special(vk_code) {
+                    KeyEvent::Special(special)
+                } else if let Some(ch) = WindowsHook::vk_to_char(vk_code, modifiers.shift, modifiers.caps_lock) {
+                    // Only process alphanumeric keys for logging to avoid capturing PHI if possible
+                    KeyEvent::Char(ch)
+                } else {
+                    return CallNextHookEx(HHOOK::default(), code, wparam, lparam);
+                }
+            };
 
-        let hook_event = HookEvent {
-            event,
-            timestamp: kb_struct.time as u64,
-            modifiers,
-        };
+            let hook_event = HookEvent {
+                event,
+                timestamp: kb_struct.time as u64,
+                modifiers,
+            };
 
-        if HOOK_LOG_KEYSTROKES {
-            tracing::debug!("KeyEvent: {:?}", hook_event);
+            if let Some(log_keystrokes) = HOOK_LOG_KEYSTROKES.get() {
+                if log_keystrokes.load(Ordering::SeqCst) {
+                    tracing::debug!("Key: {:?}", hook_event);
+                }
+            }
+
+            if let Some(mutex) = HOOK_SENDER.get() {
+                if let Ok(guard) = mutex.lock() {
+                    if let Some(tx) = &*guard {
+                        let _ = tx.send(hook_event);
+                    }
+                }
+            }
         }
+        CallNextHookEx(HHOOK::default(), code, wparam, lparam)
+    });
 
-        if let Some(ref sender) = HOOK_SENDER {
-            let _ = sender.send(hook_event);
+    match result {
+        Ok(lresult) => lresult,
+        Err(_) => {
+            tracing::error!("Panic caught in keyboard hook callback!");
+            CallNextHookEx(HHOOK::default(), code, wparam, lparam)
         }
     }
-
-    CallNextHookEx(HHOOK::default(), code, wparam, lparam)
 }
 
 // Stub implementation for non-Windows platforms

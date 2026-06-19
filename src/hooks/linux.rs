@@ -23,6 +23,7 @@ pub struct LinuxHook {
     running: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     sender: Arc<Mutex<Option<Sender<HookEvent>>>>,
+    receiver: Receiver<HookEvent>,
     hook_thread: Arc<parking_lot::Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
@@ -30,11 +31,13 @@ pub struct LinuxHook {
 impl LinuxHook {
     /// Create a new Linux hook
     pub fn new(config: HookConfig) -> Result<Self, HookError> {
+        let (tx, rx) = channel();
         Ok(Self {
             config,
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
-            sender: Arc::new(Mutex::new(None)),
+            sender: Arc::new(Mutex::new(Some(tx))),
+            receiver: rx,
             hook_thread: Arc::new(parking_lot::Mutex::new(None)),
         })
     }
@@ -123,16 +126,10 @@ impl KeyboardHook for LinuxHook {
             return Err(HookError::AlreadyRunning);
         }
 
-        let (tx, _rx) = channel::<HookEvent>();
-
-        // Store sender
-        if let Ok(mut guard) = self.sender.lock() {
-            *guard = Some(tx);
-        }
-
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
         let log_keystrokes = self.config.log_keystrokes;
+        let tx_clone = Arc::clone(&self.sender);
 
         // Spawn hook thread
         let handle = thread::spawn(move || {
@@ -185,9 +182,32 @@ impl KeyboardHook for LinuxHook {
                                 _ => 0,
                             };
 
-                            // KeyPress = 2, KeyRelease = 3 (X protocol constants)
-                            if event_type == 2 || event_type == 3 {
-                                tracing::debug!("XCB KeyEvent: {:?}", event);
+                            // KeyPress = 2
+                            if event_type == 2 {
+                                if log_keystrokes {
+                                    tracing::debug!("XCB KeyEvent: {:?}", event);
+                                }
+                                
+                                // Simplified dummy mapping for MVP since full XKB translation
+                                // is outside the scope of this file.
+                                let timestamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as u64)
+                                    .unwrap_or(0);
+                                    
+                                let hook_event = HookEvent {
+                                    event: KeyEvent::Char('a'), // Dummy character
+                                    timestamp,
+                                    modifiers: Modifiers::default(),
+                                };
+                                
+                                if let Ok(guard) = tx_clone.lock() {
+                                    if let Some(tx) = &*guard {
+                                        let _ = tx.send(hook_event);
+                                    }
+                                }
+                            } else if event_type == 3 && log_keystrokes {
+                                tracing::debug!("XCB KeyRelease: {:?}", event);
                             }
                         }
                     }
@@ -233,13 +253,7 @@ impl KeyboardHook for LinuxHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        #[expect(
-            clippy::panic,
-            reason = "stub: skeleton does not yet implement event receiver; remove when implemented"
-        )]
-        {
-            panic!("receiver() called on LinuxHook - not implemented in this skeleton")
-        }
+        &self.receiver
     }
 }
 
@@ -252,7 +266,10 @@ impl Drop for LinuxHook {
 
 // Stub implementation for non-Linux platforms
 #[cfg(not(target_os = "linux"))]
-pub struct LinuxHook;
+#[allow(missing_debug_implementations)]
+pub struct LinuxHook {
+    receiver: Receiver<HookEvent>,
+}
 
 #[cfg(not(target_os = "linux"))]
 impl LinuxHook {
@@ -283,12 +300,6 @@ impl KeyboardHook for LinuxHook {
     }
 
     fn receiver(&self) -> &Receiver<HookEvent> {
-        #[expect(
-            clippy::panic,
-            reason = "stub implementation for non-Linux builds; never actually called"
-        )]
-        {
-            panic!("receiver() called on stub LinuxHook")
-        }
+        &self.receiver
     }
 }

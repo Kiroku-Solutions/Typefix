@@ -101,18 +101,18 @@ impl TypeFixPipeline {
     }
 
     /// Add a dictionary for a language
-    pub fn add_dictionary(&self, lang: &str, trie: crate::core::Trie) {
-        self.correction_engine.add_dictionary(lang, Arc::new(trie));
+    pub fn add_dictionary(&self, lang: &str, trie: Arc<crate::core::Trie>) {
+        self.correction_engine.add_dictionary(lang, trie);
     }
 
     /// Add stopwords for a language
-    pub fn add_stopwords(&self, lang: &str, stopwords: crate::language::StopwordsTrie) {
-        self.detector.add_language(lang, Arc::new(stopwords));
+    pub fn add_stopwords(&self, lang: &str, stopwords: Arc<crate::language::StopwordsTrie>) {
+        self.detector.add_language(lang, stopwords);
     }
 
     /// Add an error map for a language
-    pub fn add_error_map(&self, lang: &str, map: crate::correction::StaticErrorMap) {
-        self.correction_engine.add_error_map(Arc::new(map), lang);
+    pub fn add_error_map(&self, lang: &str, map: Arc<crate::correction::StaticErrorMap>) {
+        self.correction_engine.add_error_map(map, lang);
     }
 
     /// Set the initial language (updates both detector and correction engine)
@@ -253,36 +253,36 @@ impl TypeFixPipeline {
         en_dict.insert("world", 800);
         en_dict.insert("the", 10000);
         en_dict.insert("and", 9000);
-        pipeline.add_dictionary("en", en_dict);
+        pipeline.add_dictionary("en", Arc::new(en_dict));
 
         let mut es_dict = crate::core::Trie::new();
         es_dict.insert("hola", 1000);
         es_dict.insert("mundo", 800);
         es_dict.insert("que", 5000);
-        pipeline.add_dictionary("es", es_dict);
+        pipeline.add_dictionary("es", Arc::new(es_dict));
 
         // Add stopwords
         let mut en_stopwords = crate::language::StopwordsTrie::new();
         for w in ["the", "a", "an", "is", "are", "and", "or", "but"] {
             en_stopwords.insert(w);
         }
-        pipeline.add_stopwords("en", en_stopwords);
+        pipeline.add_stopwords("en", Arc::new(en_stopwords));
 
         let mut es_stopwords = crate::language::StopwordsTrie::new();
         for w in ["el", "la", "de", "que", "es", "y", "en", "un"] {
             es_stopwords.insert(w);
         }
-        pipeline.add_stopwords("es", es_stopwords);
+        pipeline.add_stopwords("es", Arc::new(es_stopwords));
 
         // Add error maps
         let en_errors = crate::correction::StaticErrorMap::new("en");
         en_errors.insert_static("qeu", "que");
         en_errors.insert_static("teh", "the");
-        pipeline.add_error_map("en", en_errors);
+        pipeline.add_error_map("en", Arc::new(en_errors));
 
         let es_errors = crate::correction::StaticErrorMap::new("es");
         es_errors.insert_static("qeu", "que");
-        pipeline.add_error_map("es", es_errors);
+        pipeline.add_error_map("es", Arc::new(es_errors));
 
         pipeline.set_language("en");
         pipeline

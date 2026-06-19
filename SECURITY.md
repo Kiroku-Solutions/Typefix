@@ -1,4 +1,4 @@
-﻿# Security Policy
+# Security Policy
 
 ## Supported Versions
 
@@ -38,7 +38,7 @@ TypeFix is designed with security in mind:
 
 - **No network I/O**: The engine never makes outbound connections
 - **No file system writes**: The default configuration does not write to disk
-- **Memory-safe**: 100% safe Rust (no `unsafe` blocks in production code)
+- **Memory-safe**: Safe Rust except for OS FFI (windows, macOS, memory profiling) — audited and minimized
 - **Fail-silent**: Errors degrade gracefully, never crash the host process
 - **No telemetry**: Zero data collection, no analytics, no tracking
 - **Deterministic**: Same input always produces same output

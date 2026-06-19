@@ -23,6 +23,10 @@ struct ErrorMapInner {
     frequency: HashMap<String, u64>,
     /// User-learned errors
     user_errors: HashMap<String, String>,
+    /// Access tracking for user errors (typo -> access_counter)
+    access_tracker: HashMap<String, u64>,
+    /// Global counter for access tracking
+    access_counter: u64,
     /// Language of this map
     language: String,
 }
@@ -117,11 +121,22 @@ impl StaticErrorMap {
 
         {
             let mut inner = self.inner.write();
+            inner.access_counter += 1;
+            let counter = inner.access_counter;
+            inner.access_tracker.insert(typo_lower.clone(), counter);
+            
             inner
                 .user_errors
                 .insert(typo_lower.clone(), correction_lower);
             // Increment frequency
             *inner.frequency.entry(typo_lower).or_insert(0) += 1;
+
+            if inner.user_errors.len() > 1000 {
+                if let Some(oldest) = inner.access_tracker.iter().min_by_key(|(_, &v)| v).map(|(k, _)| k.clone()) {
+                    inner.user_errors.remove(&oldest);
+                    inner.access_tracker.remove(&oldest);
+                }
+            }
         }
     }
 
@@ -130,6 +145,7 @@ impl StaticErrorMap {
         let mut inner = self.inner.write();
         let typo_lower = typo.to_lowercase();
         inner.user_errors.remove(&typo_lower);
+        inner.access_tracker.remove(&typo_lower);
     }
 
     /// Insert a static error correction
@@ -199,9 +215,13 @@ impl StaticErrorMap {
 
         let mut inner = self.inner.write();
         for (typo, correction) in errors {
+            let typo_lower = typo.to_lowercase();
+            inner.access_counter += 1;
+            let counter = inner.access_counter;
+            inner.access_tracker.insert(typo_lower.clone(), counter);
             inner
                 .user_errors
-                .insert(typo.to_lowercase(), correction.to_lowercase());
+                .insert(typo_lower, correction.to_lowercase());
         }
 
         Ok(())
@@ -211,6 +231,7 @@ impl StaticErrorMap {
     pub fn clear_user_errors(&self) {
         let mut inner = self.inner.write();
         inner.user_errors.clear();
+        inner.access_tracker.clear();
     }
 
     /// Get map statistics
