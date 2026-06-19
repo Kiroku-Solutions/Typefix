@@ -3,11 +3,12 @@
 //! Tracks a rolling window of words and calculates the probability
 //! that the current text is in each supported language.
 
-use crate::core::Trie;
+// Remove Trie dependency
+use crate::core::Dict;
 use anyhow::Result;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Detection result
@@ -35,8 +36,12 @@ pub struct LanguageDetector {
     word_window: RwLock<Vec<String>>,
     /// Pre-calculated language probabilities (from corpus) (interior mutability)
     language_priors: RwLock<HashMap<String, f64>>,
-    /// Stopwords tries by language (interior mutability)
-    stopwords_tries: RwLock<HashMap<String, Arc<StopwordsTrie>>>,
+    /// Stopwords sets by language (interior mutability)
+    stopwords_sets: RwLock<HashMap<String, Arc<StopwordsSet>>>,
+    /// Pre-calculated stopword weights (inverse document frequency)
+    stopword_weights: RwLock<HashMap<String, f64>>,
+    /// Dictionaries for full-word fallback detection
+    dictionaries: RwLock<HashMap<String, Arc<Dict>>>,
     /// Current detected language
     current_language: RwLock<String>,
 }
@@ -58,7 +63,7 @@ impl Default for DetectorConfig {
     fn default() -> Self {
         Self {
             window_size: 5,
-            confidence_threshold: 0.85,
+            confidence_threshold: 0.90,
             hysteresis_zone: 0.10,
             min_words_before_switch: 5,
         }
@@ -72,24 +77,55 @@ impl LanguageDetector {
             config: config.clone(),
             word_window: RwLock::new(Vec::with_capacity(config.window_size)),
             language_priors: RwLock::new(HashMap::new()),
-            stopwords_tries: RwLock::new(HashMap::new()),
+            stopwords_sets: RwLock::new(HashMap::new()),
+            stopword_weights: RwLock::new(HashMap::new()),
+            dictionaries: RwLock::new(HashMap::new()),
             current_language: RwLock::new(String::new()),
         }
     }
 
-    /// Add a stopwords trie for a language
-    pub fn add_language(&self, lang: &str, stopwords: Arc<StopwordsTrie>) {
+    /// Add a stopwords set for a language
+    pub fn add_language(&self, lang: &str, stopwords: Arc<StopwordsSet>) {
         {
-            let mut tries = self.stopwords_tries.write();
-            tries.insert(lang.to_string(), stopwords);
+            let mut sets = self.stopwords_sets.write();
+            sets.insert(lang.to_string(), stopwords);
         }
         // Default prior: uniform distribution
-        let count = self.stopwords_tries.read().len();
+        let count = self.stopwords_sets.read().len();
         if count > 0 {
             let mut priors = self.language_priors.write();
-            for l in self.stopwords_tries.read().keys() {
+            for l in self.stopwords_sets.read().keys() {
                 priors.insert(l.clone(), 1.0 / count as f64);
             }
+        }
+        // Recalculate IDF weights across all languages
+        self.recalculate_weights();
+    }
+
+    /// Add a full dictionary for a language to assist in detection
+    pub fn add_dictionary(&self, lang: &str, dict: Arc<Dict>) {
+        self.dictionaries.write().insert(lang.to_string(), dict);
+    }
+
+    /// Recalculate word weights based on how many languages contain them
+    fn recalculate_weights(&self) {
+        let sets = self.stopwords_sets.read();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        
+        // Count languages containing each word
+        for set in sets.values() {
+            for word in set.iter() {
+                *counts.entry(word.clone()).or_insert(0) += 1;
+            }
+        }
+        
+        let mut weights = self.stopword_weights.write();
+        weights.clear();
+        
+        for (word, count) in counts {
+            // Inverse frequency: if in 1 language, weight is 1.0
+            // If in 2 languages, weight is 0.5, etc.
+            weights.insert(word, 1.0 / count as f64);
         }
     }
 
@@ -160,16 +196,33 @@ impl LanguageDetector {
 
     /// Calculate probability scores for each language
     fn calculate_scores(&self) -> HashMap<String, f64> {
-        let tries = self.stopwords_tries.read();
+        let sets = self.stopwords_sets.read();
+        let weights = self.stopword_weights.read();
+        let dicts = self.dictionaries.read();
         let window = self.word_window.read();
 
-        let mut scores: HashMap<String, f64> = tries.keys().map(|l| (l.clone(), 0.0f64)).collect();
+        let mut scores: HashMap<String, f64> = sets.keys().map(|l| (l.clone(), 0.0f64)).collect();
 
         for word in window.iter() {
-            for (lang, trie) in tries.iter() {
-                if trie.is_stopword(word) {
-                    if let Some(score) = scores.get_mut(lang) {
-                        *score += 1.0;
+            let weight = weights.get(word).copied().unwrap_or(0.0);
+            if weight > 0.0 {
+                // It's a stopword, use its TF-IDF weight
+                for (lang, set) in sets.iter() {
+                    if set.is_stopword(word) {
+                        if let Some(score) = scores.get_mut(lang) {
+                            *score += weight;
+                        }
+                    }
+                }
+            } else {
+                // Not a stopword. Check full dictionaries!
+                // A match in the dictionary is a strong signal, give it a base weight.
+                // We use 0.5 so it contributes meaningfully but stopwords still drive the core.
+                for (lang, dict) in dicts.iter() {
+                    if dict.contains(word) {
+                        if let Some(score) = scores.get_mut(lang) {
+                            *score += 0.5;
+                        }
                     }
                 }
             }
@@ -210,11 +263,17 @@ impl LanguageDetector {
     /// Calculate score for a specific language
     fn calculate_current_score(&self, lang: &str) -> f64 {
         let window = self.word_window.read();
-        let tries = self.stopwords_tries.read();
+        let sets = self.stopwords_sets.read();
+        let weights = self.stopword_weights.read();
 
-        tries.get(lang).map_or(0.0, |trie| {
-            let count = window.iter().filter(|w| trie.is_stopword(w)).count() as f64;
-            count / window.len().max(1) as f64
+        sets.get(lang).map_or(0.0, |set| {
+            let mut total_weight = 0.0;
+            for w in window.iter() {
+                if set.is_stopword(w) {
+                    total_weight += weights.get(w).copied().unwrap_or(0.0);
+                }
+            }
+            total_weight / window.len().max(1) as f64
         })
     }
 
@@ -234,45 +293,45 @@ impl LanguageDetector {
     }
 }
 
-/// Stopwords Trie for efficient language detection
+/// Stopwords Set for efficient language detection
 ///
 /// Stores stopwords (common words) for quick language fingerprinting.
 #[derive(Debug, Clone, Default)]
-pub struct StopwordsTrie {
-    trie: Trie,
-    stopword_count: usize,
+pub struct StopwordsSet {
+    set: HashSet<String>,
 }
 
-impl StopwordsTrie {
-    /// Create a new empty StopwordsTrie
+impl StopwordsSet {
+    /// Create a new empty StopwordsSet
     pub fn new() -> Self {
         Self {
-            trie: Trie::new(),
-            stopword_count: 0,
+            set: HashSet::new(),
         }
     }
 
     /// Insert a stopword
     pub fn insert(&mut self, word: &str) {
-        if !self.trie.contains(word) {
-            self.stopword_count += 1;
-        }
-        self.trie.insert_word(word);
+        self.set.insert(word.to_lowercase());
     }
 
     /// Check if a word is a stopword
     pub fn is_stopword(&self, word: &str) -> bool {
-        self.trie.contains(&word.to_lowercase())
+        self.set.contains(&word.to_lowercase())
     }
 
     /// Get the number of stopwords
     pub fn len(&self) -> usize {
-        self.stopword_count
+        self.set.len()
+    }
+
+    /// Iterate over the stopwords
+    pub fn iter(&self) -> std::collections::hash_set::Iter<'_, String> {
+        self.set.iter()
     }
 
     /// Check if empty
     pub fn is_empty(&self) -> bool {
-        self.stopword_count == 0
+        self.set.is_empty()
     }
 
     /// Load from JSON file
@@ -289,13 +348,13 @@ impl StopwordsTrie {
         }
 
         let file: StopwordsFile = serde_json::from_str(json)?;
-        let mut trie = StopwordsTrie::new();
+        let mut set = StopwordsSet::new();
 
         for word in file.stopwords {
-            trie.insert(&word);
+            set.insert(&word);
         }
 
-        Ok(trie)
+        Ok(set)
     }
 }
 
@@ -317,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_stopwords_trie() {
-        let mut trie = StopwordsTrie::new();
+        let mut trie = StopwordsSet::new();
         trie.insert("el");
         trie.insert("la");
         trie.insert("de");
@@ -338,11 +397,11 @@ mod tests {
             min_words_before_switch: 2, // Only need 2 words
         });
 
-        let mut es_stopwords = StopwordsTrie::new();
+        let mut es_stopwords = StopwordsSet::new();
         es_stopwords.insert("el");
         es_stopwords.insert("la");
 
-        let mut en_stopwords = StopwordsTrie::new();
+        let mut en_stopwords = StopwordsSet::new();
 
         detector.add_language("es", Arc::new(es_stopwords));
         detector.add_language("en", Arc::new(en_stopwords));
@@ -361,12 +420,12 @@ mod tests {
     fn test_no_switch_on_insufficient_words() {
         let mut detector = LanguageDetector::new(DetectorConfig {
             window_size: 5,
-            confidence_threshold: 0.85,
+            confidence_threshold: 0.90,
             hysteresis_zone: 0.10,
             min_words_before_switch: 3,
         });
 
-        let mut es_stopwords = StopwordsTrie::new();
+        let mut es_stopwords = StopwordsSet::new();
         es_stopwords.insert("el");
 
         detector.add_language("es", Arc::new(es_stopwords));
@@ -374,7 +433,7 @@ mod tests {
 
         // Only one word - should not switch
         let result = detector.process_word("el");
-        assert!(result.is_none());
+        assert!(result.is_none(), "Expected none, got {:?}", result.map(|r| r.language));
         assert_eq!(detector.get_language(), "en");
     }
 
@@ -382,19 +441,19 @@ mod tests {
     fn test_hysteresis() {
         let mut detector = LanguageDetector::new(DetectorConfig {
             window_size: 5,
-            confidence_threshold: 0.85,
-            hysteresis_zone: 0.30, // Large hysteresis zone
+            confidence_threshold: 0.90,
+            hysteresis_zone: 0.20, // Large hysteresis zone
             min_words_before_switch: 3,
         });
 
-        let mut es_stopwords = StopwordsTrie::new();
+        let mut es_stopwords = StopwordsSet::new();
         for i in 0..10 {
             es_stopwords.insert(&format!("word{}", i));
         }
         es_stopwords.insert("el");
         es_stopwords.insert("la");
 
-        let mut en_stopwords = StopwordsTrie::new();
+        let mut en_stopwords = StopwordsSet::new();
         for i in 0..10 {
             en_stopwords.insert(&format!("word{}", i));
         }
@@ -408,7 +467,7 @@ mod tests {
         let result = detector.process_word("el");
         let result = detector.process_word("word2");
 
-        assert!(result.is_none());
+        assert!(result.is_none(), "Expected none, got {:?}", result.map(|r| r.language));
     }
 
     #[test]
@@ -429,7 +488,7 @@ mod tests {
             "stopwords": ["el", "la", "de", "que"]
         }"#;
 
-        let trie = StopwordsTrie::from_json(json).unwrap();
+        let trie = StopwordsSet::from_json(json).unwrap();
         assert!(trie.is_stopword("el"));
         assert!(trie.is_stopword("que"));
         assert!(!trie.is_stopword("casa"));

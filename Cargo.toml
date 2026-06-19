@@ -18,6 +18,7 @@ default-run = "typefix"
 [lib]
 name = "typefix"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "typefix"
@@ -50,9 +51,19 @@ anyhow = "1.0"
 
 # CLI
 clap = { version = "4.0", features = ["derive"] }
+fst = { version = "0.4.7", features = ["levenshtein"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+directories = "6.0.0"
+tray-icon = "0.24.1"
+tao = "0.35.3"
 # Platform-specific dependencies (work for cross-compilation via cfg attributes)
 # See .cargo/config.toml for cross-compilation target configuration
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -74,6 +85,9 @@ core-graphics = "0.25"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 serial_test = "3"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
 
 [profile.release]
 opt-level = 3

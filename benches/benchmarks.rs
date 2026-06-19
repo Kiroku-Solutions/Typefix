@@ -1,24 +1,25 @@
-﻿//! Benchmark suite for TypeFix
+//! Benchmark suite for TypeFix
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    // Trie benchmarks
-    c.bench_function("trie_insert", |b| {
-        use typefix::Trie;
-        let trie = Trie::new();
+    // Dict benchmarks
+    c.bench_function("dict_build", |b| {
+        use typefix::core::Dict;
         b.iter(|| {
-            let mut t = trie.clone();
-            t.insert(black_box("benchmark"), black_box(1000));
+            let mut builder = fst::MapBuilder::memory();
+            builder.insert("benchmark", 1000).unwrap();
+            let _dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
         });
     });
 
-    c.bench_function("trie_search", |b| {
-        use typefix::Trie;
-        let mut trie = Trie::new();
-        trie.insert("hello", 1000);
-        trie.insert("world", 800);
-        b.iter(|| trie.search(black_box("hello")));
+    c.bench_function("dict_search", |b| {
+        use typefix::core::Dict;
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("hello", 1000).unwrap();
+        builder.insert("world", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        b.iter(|| dict.search(black_box("hello")));
     });
 
     // Buffer benchmarks

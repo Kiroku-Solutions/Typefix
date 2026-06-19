@@ -226,6 +226,39 @@ impl Config {
         Ok(config)
     }
 
+    /// Resolve the default configuration path for the current OS
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn resolve_config_path() -> PathBuf {
+        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "Kiroku", "TypeFix") {
+            proj_dirs.config_dir().join("config.json")
+        } else {
+            // Fallback to local directory if no valid home dir is found
+            PathBuf::from("config.json")
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn resolve_config_path() -> PathBuf {
+        PathBuf::from("config.json")
+    }
+
+    /// Load the configuration from the OS-specific directory, creating it if it doesn't exist
+    pub fn load_or_default() -> Result<(Self, PathBuf), ConfigError> {
+        let path = Self::resolve_config_path();
+
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let default_config = Self::default();
+            default_config.to_file(&path)?;
+            Ok((default_config, path))
+        } else {
+            let config = Self::from_file(&path)?;
+            Ok((config, path))
+        }
+    }
+
     /// Load configuration from string
     pub fn from_str(content: &str, _format: ConfigFormat) -> Result<Self, ConfigError> {
         let config: Config = serde_json::from_str(content)?;

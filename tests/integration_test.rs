@@ -6,14 +6,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use typefix::core::Trie;
+use typefix::core::Dict;
 use typefix::correction::engine::EngineConfig;
 use typefix::correction::CorrectionEngine;
 use typefix::hooks::platform::{
     HookConfig, HookEvent, HookMode, KeyEvent, KeyboardHook, MockHook, SpecialKey,
 };
 use typefix::language::detector::DetectorConfig;
-use typefix::language::{LanguageDetector, StopwordsTrie};
+use typefix::language::{LanguageDetector, StopwordsSet};
 use typefix::pipeline::{PipelineConfig, PipelineEvent, PipelineResult, TypeFixPipeline};
 
 // =============================================================================
@@ -599,10 +599,11 @@ fn test_editor_with_emojis() {
 fn test_cli_correct_basic() {
     let engine = CorrectionEngine::new(EngineConfig::default());
 
-    let mut trie = Trie::new();
-    trie.insert("hello", 1000);
-    trie.insert("world", 900);
-    engine.add_dictionary("en", Arc::new(trie));
+    let mut builder = fst::MapBuilder::memory();
+    builder.insert("hello", 1000).unwrap();
+    builder.insert("world", 900).unwrap();
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("hellp");
 
@@ -615,9 +616,10 @@ fn test_cli_correct_basic() {
 fn test_cli_correct_valid_word() {
     let engine = CorrectionEngine::new(EngineConfig::default());
 
-    let mut trie = Trie::new();
-    trie.insert("hello", 1000);
-    engine.add_dictionary("en", Arc::new(trie));
+    let mut builder = fst::MapBuilder::memory();
+    builder.insert("hello", 1000).unwrap();
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("hello");
 
@@ -631,9 +633,10 @@ fn test_cli_correct_valid_word() {
 fn test_cli_correct_transposition() {
     let engine = CorrectionEngine::new(EngineConfig::default());
 
-    let mut trie = Trie::new();
-    trie.insert("the", 1000);
-    engine.add_dictionary("en", Arc::new(trie));
+    let mut builder = fst::MapBuilder::memory();
+    builder.insert("the", 1000).unwrap();
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("teh");
 
@@ -668,13 +671,13 @@ fn test_language_detection_sufficient_data() {
     };
     let detector = LanguageDetector::new(config);
 
-    let mut es_stopwords = StopwordsTrie::new();
+    let mut es_stopwords = StopwordsSet::new();
     for word in ["el", "la", "de", "que", "es", "y", "en", "un", "por"] {
         es_stopwords.insert(word);
     }
     detector.add_language("es", Arc::new(es_stopwords));
 
-    let mut en_stopwords = StopwordsTrie::new();
+    let mut en_stopwords = StopwordsSet::new();
     for word in [
         "the", "a", "an", "is", "are", "and", "or", "but", "in", "on",
     ] {
@@ -704,13 +707,13 @@ fn test_language_switch_detection() {
     };
     let detector = LanguageDetector::new(config);
 
-    let mut es_stopwords = StopwordsTrie::new();
+    let mut es_stopwords = StopwordsSet::new();
     for word in ["el", "la", "de", "que", "es", "y", "en", "un", "por"] {
         es_stopwords.insert(word);
     }
     detector.add_language("es", Arc::new(es_stopwords));
 
-    let mut en_stopwords = StopwordsTrie::new();
+    let mut en_stopwords = StopwordsSet::new();
     for word in [
         "the", "a", "an", "is", "are", "and", "or", "but", "in", "on",
     ] {

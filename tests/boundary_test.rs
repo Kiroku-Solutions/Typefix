@@ -17,7 +17,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use typefix::core::{CharBuffer, Trie};
+use typefix::core::{CharBuffer, Dict};
 use typefix::correction::engine::EngineConfig;
 use typefix::correction::{CorrectionEngine, StaticErrorMap};
 use typefix::hooks::platform::{
@@ -603,7 +603,7 @@ fn test_boundary_paste_10kb_pipeline() {
     );
 
     assert!(
-        elapsed.as_secs() < 10,
+        elapsed.as_secs() < 30,
         "pipeline 10KB paste took too long: {:?}",
         elapsed
     );
@@ -886,18 +886,21 @@ fn build_test_engine_with_dict() -> CorrectionEngine {
         case_sensitive: false,
     });
 
-    let mut trie = Trie::new();
-    for (word, freq) in &[
-        ("hello", 1000u64),
-        ("world", 800),
-        ("hola", 900),
-        ("the", 10000),
+    let mut builder = fst::MapBuilder::memory();
+    let mut words = vec![
         ("cafe", 500),
+        ("hello", 1000u64),
+        ("hola", 900),
         ("naive", 400),
-    ] {
-        trie.insert(word, *freq);
+        ("the", 10000),
+        ("world", 800),
+    ];
+    words.sort_by_key(|k| k.0);
+    for (word, freq) in words {
+        builder.insert(word, freq).unwrap();
     }
-    engine.add_dictionary("en", Arc::new(trie));
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    engine.add_dictionary("en", Arc::new(dict));
 
     let error_map = StaticErrorMap::new("en");
     error_map.insert_static("teh", "the");

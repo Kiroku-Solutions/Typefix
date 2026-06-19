@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! TypeFix - CLI Entry Point
 //!
 //! Usage:
@@ -26,6 +27,12 @@ fn main() -> Result<()> {
                 .arg(clap::Arg::new("word").required(true)),
         )
         .subcommand(clap::Command::new("bench").about("Run performance benchmarks"))
+        .subcommand(
+            clap::Command::new("build-dict")
+                .about("Compile JSON dictionary to binary FST format")
+                .arg(clap::Arg::new("input").required(true).help("Input JSON file"))
+                .arg(clap::Arg::new("output").required(true).help("Output FST file")),
+        )
         .arg(
             clap::Arg::new("config")
                 .short('c')
@@ -75,6 +82,11 @@ fn main() -> Result<()> {
             }
         }
         Some("bench") => run_benchmarks()?,
+        Some("build-dict") => {
+            if let Some(build_matches) = matches.subcommand_matches("build-dict") {
+                run_build_dict(build_matches)?;
+            }
+        }
         _ => run_daemon(matches.clone())?,
     }
 
@@ -82,18 +94,31 @@ fn main() -> Result<()> {
 }
 
 fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
-    let config_path = matches
-        .get_one::<String>("config")
-        .ok_or_else(|| anyhow::anyhow!("Missing --config argument"))?;
+    // If the user specified a config file via CLI, use it. Otherwise, use the OS native config dir.
+    let (config, config_path) = if let Some(path) = matches.get_one::<String>("config") {
+        let p = PathBuf::from(path);
+        if p.exists() || path != "config.json" {
+            (
+                typefix::core::config::Config::from_file(path)
+                    .with_context(|| format!("Failed to load config from {}", path))?,
+                p,
+            )
+        } else {
+            typefix::core::config::Config::load_or_default()
+                .context("Failed to load or create default native config")?
+        }
+    } else {
+        typefix::core::config::Config::load_or_default()
+            .context("Failed to load or create default native config")?
+    };
+
+    tracing::info!("Loaded configuration from {}", config_path.display());
+
     let data_path: PathBuf = matches
         .get_one::<String>("data-path")
         .ok_or_else(|| anyhow::anyhow!("Missing --data-path argument"))?
         .into();
 
-    tracing::info!("Loading configuration from {}", config_path);
-
-    let config =
-        typefix::core::config::Config::from_file(config_path).context("Failed to load config")?;
     let config = typefix::core::config::Config {
         data_path,
         ..config
@@ -161,19 +186,29 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
         pipeline.set_language(&state.active_language);
     }
 
-    let receiver = hook.receiver();
-    loop {
-        let event = match receiver.recv() {
-            Ok(event) => event,
-            Err(_) => {
-                tracing::info!("Hook receiver disconnected, shutting down...");
-                break;
-            }
-        };
+    std::thread::spawn(move || {
+        loop {
+            let event = match hook.receiver().recv() {
+                Ok(event) => event,
+                Err(_) => {
+                    tracing::info!("Hook receiver disconnected, shutting down...");
+                    break;
+                }
+            };
 
-        match event.event {
-            KeyEvent::Char(ch) => {
-                if let Some(result) = pipeline.push(ch) {
+            match event.event {
+                KeyEvent::Char(ch) => {
+                    if let Some(result) = pipeline.push(ch) {
+                        // Auto-Switch Language if a confident detection occurred
+                        if let Some(detection) = &result.detected_language {
+                            tracing::info!(
+                                "Auto-Switching language to '{}' (confidence: {:.2})",
+                                detection.language,
+                                detection.confidence
+                            );
+                            pipeline.set_language(&detection.language);
+                        }
+
                         if let Some(corrected) = result.corrected {
                             tracing::info!(
                                 "Correction: '{}' -> '{}'",
@@ -191,23 +226,61 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                                 tracing::error!("Failed to send correction text: {}", e);
                             }
                         }
+                    }
                 }
+                KeyEvent::Special(SpecialKey::Backspace) => {
+                    pipeline.clear();
+                }
+                KeyEvent::Special(
+                    SpecialKey::Enter | SpecialKey::Tab | SpecialKey::Escape,
+                ) => {
+                    // Push a space to force delimiter extraction
+                    let _ = pipeline.push(' ');
+                }
+                KeyEvent::Special(_) | KeyEvent::Control(_) => {}
             }
-            KeyEvent::Special(SpecialKey::Backspace) => {
-                pipeline.clear();
+        }
+    });
+
+    tracing::info!("Starting System Tray...");
+
+    let event_loop = tao::event_loop::EventLoop::new();
+    let tray_menu = tray_icon::menu::Menu::new();
+    let quit_i = tray_icon::menu::MenuItem::new("Quit", true, None);
+    let _ = tray_menu.append(&quit_i);
+
+    let (width, height) = (32, 32);
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                rgba.extend_from_slice(&[255, 255, 255, 255]);
+            } else {
+                rgba.extend_from_slice(&[50, 100, 200, 255]);
             }
-            KeyEvent::Special(
-                SpecialKey::Enter | SpecialKey::Tab | SpecialKey::Escape,
-            ) => {
-                // Push a space to force delimiter extraction
-                let _ = pipeline.push(' ');
-            }
-            KeyEvent::Special(_) | KeyEvent::Control(_) => {}
         }
     }
+    let icon = tray_icon::Icon::from_rgba(rgba, width, height).unwrap();
 
-    tracing::info!("Shutting down...");
-    Ok(())
+    let _tray_icon = tray_icon::TrayIconBuilder::new()
+        .with_menu(Box::new(tray_menu))
+        .with_tooltip("TypeFix")
+        .with_icon(icon)
+        .build()
+        .unwrap();
+
+    let menu_channel = tray_icon::menu::MenuEvent::receiver();
+
+    event_loop.run(move |_event, _, control_flow| {
+        *control_flow = tao::event_loop::ControlFlow::Wait;
+
+        if let Ok(event) = menu_channel.try_recv() {
+            if event.id == quit_i.id() {
+                tracing::info!("Quit requested via tray menu.");
+                *control_flow = tao::event_loop::ControlFlow::Exit;
+            }
+        }
+    });
 }
 
 fn run_repl() -> Result<()> {
@@ -287,19 +360,25 @@ fn run_repl() -> Result<()> {
 
 fn correct_word(word: &str) -> Result<()> {
     use std::sync::Arc;
-    use typefix::core::Trie;
+    use typefix::core::Dict;
     use typefix::{CorrectionEngine, EngineConfig};
 
     let engine = CorrectionEngine::new(EngineConfig::default());
 
     // Add test dictionary
-    let mut trie = Trie::new();
-    trie.insert("hello", 1000);
-    trie.insert("world", 900);
-    trie.insert("the", 800);
-    trie.insert("que", 700);
-    trie.insert("test", 600);
-    engine.add_dictionary("en", Arc::new(trie));
+    let mut builder = fst::MapBuilder::memory();
+    let words = vec![
+        ("hello", 1000),
+        ("que", 700),
+        ("test", 600),
+        ("the", 800),
+        ("world", 900),
+    ];
+    for (w, f) in words {
+        builder.insert(w.as_bytes(), f).unwrap();
+    }
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct(word);
     if let Some(corrected) = result.corrected {
@@ -320,7 +399,7 @@ fn run_benchmarks() -> Result<()> {
     println!("Running stress tests...\n");
 
     use std::time::Instant;
-    use typefix::core::Trie;
+    use typefix::core::Dict;
     use typefix::TypeFixPipeline;
 
     // Benchmark 1: Pipeline throughput
@@ -346,18 +425,24 @@ fn run_benchmarks() -> Result<()> {
     println!("  - Time: {:.2}ms\n", elapsed.as_secs_f64() * 1000.0);
 
     // Benchmark 2: Dictionary operations
-    let mut trie = Trie::new();
     let word_count = 50_000;
+    
+    let mut entries: Vec<(String, u64)> = (0..word_count)
+        .map(|i| (format!("word{:06}", i), i as u64))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     let start = Instant::now();
-    for i in 0..word_count {
-        trie.insert(&format!("word{:06}", i), i as u64);
+    let mut builder = fst::MapBuilder::memory();
+    for (w, f) in &entries {
+        builder.insert(w.as_bytes(), *f).unwrap();
     }
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
     let insert_time = start.elapsed();
 
     let start = Instant::now();
     for i in 0..1000 {
-        let _ = trie.search(&format!("word{:06}", i * 7 % word_count));
+        let _ = dict.search(&format!("word{:06}", i * 7 % word_count));
     }
     let search_time = start.elapsed();
 
@@ -376,5 +461,19 @@ fn run_benchmarks() -> Result<()> {
     );
 
     println!("Benchmarks complete!");
+    Ok(())
+}
+
+fn run_build_dict(matches: &clap::ArgMatches) -> Result<()> {
+    let input = matches.get_one::<String>("input").unwrap();
+    let output = matches.get_one::<String>("output").unwrap();
+    
+    let input_path = std::path::Path::new(input);
+    let output_path = std::path::Path::new(output);
+
+    println!("Compiling JSON dictionary at {} to FST at {}", input, output);
+    typefix::core::Dict::compile_json_to_fst(input_path, output_path)?;
+    println!("Compilation successful.");
+
     Ok(())
 }

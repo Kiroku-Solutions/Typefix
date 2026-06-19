@@ -6,4 +6,4 @@ pub mod stopwords;
 
 pub use detector::LanguageDetector;
 pub use resolver::{resolve_language, LanguageSource, ResolvedLanguage};
-pub use stopwords::StopwordsTrie;
+pub use stopwords::StopwordsSet;

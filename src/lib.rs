@@ -25,16 +25,21 @@
 
 pub mod core;
 pub mod correction;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod hooks;
 pub mod language;
 pub mod pipeline;
 
-pub use core::{buffer::*, config::*, trie::*};
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
+pub use core::{buffer::*, config::*, dict::*};
 pub use correction::{damerau::*, engine::*, static_map::*};
 #[cfg(target_os = "linux")]
 pub use hooks::linux;
 #[cfg(target_os = "macos")]
 pub use hooks::macos;
+#[cfg(not(target_arch = "wasm32"))]
 pub use hooks::platform;
 #[cfg(target_os = "windows")]
 pub use hooks::windows;
@@ -57,10 +62,10 @@ static ENGINE_STATE: Lazy<Arc<RwLock<EngineState>>> =
 pub struct EngineState {
     /// Current active language
     pub active_language: String,
-    /// Trie dictionaries by language
-    pub dictionaries: std::collections::HashMap<String, Arc<Trie>>,
+    /// FST dictionaries by language
+    pub dictionaries: std::collections::HashMap<String, Arc<Dict>>,
     /// Stopwords by language
-    pub stopwords: std::collections::HashMap<String, Arc<StopwordsTrie>>,
+    pub stopwords: std::collections::HashMap<String, Arc<StopwordsSet>>,
     /// Static error maps by language
     pub error_maps: std::collections::HashMap<String, Arc<StaticErrorMap>>,
 }
@@ -117,19 +122,26 @@ fn load_language_data(lang: &str, data_path: &std::path::Path) -> Result<()> {
     let mut state = ENGINE_STATE.write();
 
     // Load dictionary
-    let dict_path = data_path
-        .join("dictionaries")
-        .join(format!("{}.json", lang));
-    if dict_path.exists() {
-        let trie = Trie::from_json_file(&dict_path)?;
-        state.dictionaries.insert(lang.to_string(), Arc::new(trie));
-        tracing::debug!("Loaded dictionary for {}", lang);
+    let fst_path = data_path.join("dictionaries").join(format!("{}.fst", lang));
+    let json_path = data_path.join("dictionaries").join(format!("{}.json", lang));
+    
+    if !fst_path.exists() && json_path.exists() {
+        tracing::info!("Compiling JSON dictionary to FST for language: {}", lang);
+        if let Err(e) = Dict::compile_json_to_fst(&json_path, &fst_path) {
+            tracing::error!("Failed to compile dictionary to FST: {}", e);
+        }
+    }
+
+    if fst_path.exists() {
+        let dict = Dict::from_fst_file(&fst_path)?;
+        state.dictionaries.insert(lang.to_string(), Arc::new(dict));
+        tracing::debug!("Loaded FST dictionary for {}", lang);
     }
 
     // Load stopwords
     let stopwords_path = data_path.join("stopwords").join(format!("{}.json", lang));
     if stopwords_path.exists() {
-        let stopwords = StopwordsTrie::from_json_file(&stopwords_path)?;
+        let stopwords = StopwordsSet::from_json_file(&stopwords_path)?;
         state
             .stopwords
             .insert(lang.to_string(), Arc::new(stopwords));

@@ -2,8 +2,8 @@
 
 pub mod buffer;
 pub mod config;
-pub mod trie;
+pub mod dict;
 
 pub use buffer::{BufferEvent, CharBuffer, CharBufferBuilder};
 pub use config::Config;
-pub use trie::Trie;
+pub use dict::Dict;

@@ -11,30 +11,33 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
-use typefix::core::Trie;
+use typefix::core::Dict;
 use typefix::correction::engine::EngineConfig;
 use typefix::correction::CorrectionEngine;
 use typefix::correction::StaticErrorMap;
 use typefix::language::detector::{DetectorConfig, LanguageDetector};
-use typefix::language::StopwordsTrie;
+use typefix::language::StopwordsSet;
 use typefix::pipeline::{PipelineConfig, TypeFixPipeline};
 
 /// Build a single CorrectionEngine preloaded with a small English dictionary
 /// and a handful of static typo corrections. The engine is wrapped in an
 /// `Arc` so the same instance can be shared across many threads.
 fn shared_correction_engine() -> Arc<CorrectionEngine> {
-    let mut trie = Trie::new();
-    for (w, freq) in [
-        ("hello", 1000u64),
-        ("world", 900),
-        ("the", 10000),
+    let mut builder = fst::MapBuilder::memory();
+    let mut words = vec![
         ("and", 9000),
+        ("hello", 1000u64),
         ("people", 4000),
+        ("the", 10000),
         ("which", 3000),
+        ("world", 900),
         ("would", 2500),
-    ] {
-        trie.insert(w, freq);
+    ];
+    words.sort_by_key(|k| k.0);
+    for (w, freq) in words {
+        builder.insert(w, freq).unwrap();
     }
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
 
     let errors = {
         let e = StaticErrorMap::new("en");
@@ -50,7 +53,7 @@ fn shared_correction_engine() -> Arc<CorrectionEngine> {
         min_word_length: 2,
         case_sensitive: false,
     });
-    engine.add_dictionary("en", Arc::new(trie));
+    engine.add_dictionary("en", Arc::new(dict));
     engine.add_error_map(Arc::new(errors), "en");
 
     let detector = Arc::new(LanguageDetector::new(DetectorConfig {
@@ -210,8 +213,10 @@ fn test_concurrent_detector_updates() {
     const FEEDERS: usize = 6;
     const WORDS_PER_FEEDER: usize = 2_000;
 
-    let mut es_stop = StopwordsTrie::new();
-    for w in ["el", "la", "de", "que", "es", "y", "en", "un", "una", "los"] {
+    let mut es_stop = StopwordsSet::new();
+    let mut words = vec!["el", "la", "de", "que", "es", "y", "en", "un", "una", "los"];
+    words.sort();
+    for w in words {
         es_stop.insert(w);
     }
 

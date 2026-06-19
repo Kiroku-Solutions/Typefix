@@ -101,12 +101,14 @@ impl TypeFixPipeline {
     }
 
     /// Add a dictionary for a language
-    pub fn add_dictionary(&self, lang: &str, trie: Arc<crate::core::Trie>) {
-        self.correction_engine.add_dictionary(lang, trie);
+    pub fn add_dictionary(&self, lang: &str, dict: Arc<crate::core::Dict>) {
+        self.correction_engine.add_dictionary(lang, dict.clone());
+        self.detector.add_dictionary(lang, dict);
     }
 
     /// Add stopwords for a language
-    pub fn add_stopwords(&self, lang: &str, stopwords: Arc<crate::language::StopwordsTrie>) {
+    /// Add stopwords for a language
+    pub fn add_stopwords(&self, lang: &str, stopwords: Arc<crate::language::StopwordsSet>) {
         self.detector.add_language(lang, stopwords);
     }
 
@@ -243,32 +245,43 @@ pub struct PipelineResult {
 }
 
 impl TypeFixPipeline {
-    /// Create a simple pipeline for testing
     pub fn simple() -> Self {
         let pipeline = Self::new(PipelineConfig::default());
 
+        fn build_dict(words: &[(&str, u64)]) -> crate::core::Dict {
+            let mut entries = words.to_vec();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut builder = fst::MapBuilder::memory();
+            for (w, f) in entries {
+                builder.insert(w.as_bytes(), f).unwrap();
+            }
+            crate::core::Dict::from_bytes(builder.into_inner().unwrap()).unwrap()
+        }
+
         // Add test dictionaries
-        let mut en_dict = crate::core::Trie::new();
-        en_dict.insert("hello", 1000);
-        en_dict.insert("world", 800);
-        en_dict.insert("the", 10000);
-        en_dict.insert("and", 9000);
+        let en_dict = build_dict(&[
+            ("and", 9000),
+            ("hello", 1000),
+            ("the", 10000),
+            ("world", 800),
+        ]);
         pipeline.add_dictionary("en", Arc::new(en_dict));
 
-        let mut es_dict = crate::core::Trie::new();
-        es_dict.insert("hola", 1000);
-        es_dict.insert("mundo", 800);
-        es_dict.insert("que", 5000);
+        let es_dict = build_dict(&[
+            ("hola", 1000),
+            ("mundo", 800),
+            ("que", 5000),
+        ]);
         pipeline.add_dictionary("es", Arc::new(es_dict));
 
         // Add stopwords
-        let mut en_stopwords = crate::language::StopwordsTrie::new();
+        let mut en_stopwords = crate::language::StopwordsSet::new();
         for w in ["the", "a", "an", "is", "are", "and", "or", "but"] {
             en_stopwords.insert(w);
         }
         pipeline.add_stopwords("en", Arc::new(en_stopwords));
 
-        let mut es_stopwords = crate::language::StopwordsTrie::new();
+        let mut es_stopwords = crate::language::StopwordsSet::new();
         for w in ["el", "la", "de", "que", "es", "y", "en", "un"] {
             es_stopwords.insert(w);
         }

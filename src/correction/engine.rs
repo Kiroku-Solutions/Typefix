@@ -3,7 +3,7 @@
 //! Combines static error maps, Damerau-Levenshtein distance, and language
 //! dictionaries to provide accurate typo corrections.
 
-use crate::core::Trie;
+use crate::core::Dict;
 use crate::correction::{DamerauLevenshtein, StaticErrorMap};
 use crate::language::LanguageDetector;
 use parking_lot::RwLock;
@@ -78,7 +78,7 @@ impl Default for EngineConfig {
 pub struct CorrectionEngine {
     config: EngineConfig,
     /// Dictionaries by language (interior mutability)
-    dictionaries: RwLock<std::collections::HashMap<String, Arc<Trie>>>,
+    dictionaries: RwLock<std::collections::HashMap<String, Arc<Dict>>>,
     /// Error maps by language (interior mutability)
     error_maps: RwLock<std::collections::HashMap<String, Arc<StaticErrorMap>>>,
     /// Damerau-Levenshtein calculator
@@ -106,8 +106,8 @@ impl CorrectionEngine {
     }
 
     /// Add a dictionary for a language
-    pub fn add_dictionary(&self, lang: &str, trie: Arc<Trie>) {
-        self.dictionaries.write().insert(lang.to_string(), trie);
+    pub fn add_dictionary(&self, lang: &str, dict: Arc<Dict>) {
+        self.dictionaries.write().insert(lang.to_string(), dict);
     }
 
     /// Add an error map for a language
@@ -171,6 +171,24 @@ impl CorrectionEngine {
             }
         }
 
+        // Step 1.5: CROSS-LANGUAGE VALIDATION
+        // If the word is perfectly valid in ANY of our loaded languages, DO NOT correct it.
+        // This prevents aggressive corrections when the user is starting to type in a different language,
+        // but the auto-switch hasn't triggered yet because of the min_words_before_switch delay.
+        {
+            let dicts = self.dictionaries.read();
+            for dict in dicts.values() {
+                if dict.contains(&word_normalized) {
+                    return CorrectionResult {
+                        original: word.to_string(),
+                        corrected: None,
+                        candidates: Vec::new(),
+                        source: CorrectionSource::None,
+                    };
+                }
+            }
+        }
+
         // Step 2: Dictionary lookup with Damerau-Levenshtein
         if let Some(dict) = self.dictionaries.read().get(&current_lang) {
             let candidates = self.find_dictionary_corrections(&word_normalized, dict);
@@ -196,7 +214,7 @@ impl CorrectionEngine {
     }
 
     /// Find corrections in dictionary using Damerau-Levenshtein
-    fn find_dictionary_corrections(&self, word: &str, dict: &Trie) -> Vec<CorrectionCandidate> {
+    fn find_dictionary_corrections(&self, word: &str, dict: &Dict) -> Vec<CorrectionCandidate> {
         // First try exact match - no typo
         if dict.contains(word) {
             return Vec::new();
@@ -381,15 +399,16 @@ mod tests {
         });
 
         // Add test dictionary
-        let mut trie = Trie::new();
-        trie.insert("hello", 1000);
-        trie.insert("world", 800);
-        trie.insert("hola", 900);
-        trie.insert("que", 500);
-        trie.insert("the", 10000);
-        trie.insert("and", 9000);
-        trie.insert("is", 8000);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("and", 9000).unwrap();
+        builder.insert("hello", 1000).unwrap();
+        builder.insert("hola", 900).unwrap();
+        builder.insert("is", 8000).unwrap();
+        builder.insert("que", 500).unwrap();
+        builder.insert("the", 10000).unwrap();
+        builder.insert("world", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
             crate::language::detector::DetectorConfig {
@@ -422,12 +441,13 @@ mod tests {
     #[test]
     fn test_multiple_candidates() {
         let mut engine = create_test_engine();
-        let mut trie = Trie::new();
-        trie.insert("hello", 1000);
-        trie.insert("jello", 800);
-        trie.insert("yello", 600);
-        trie.insert("hallo", 400);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("hallo", 400).unwrap();
+        builder.insert("hello", 1000).unwrap();
+        builder.insert("jello", 800).unwrap();
+        builder.insert("yello", 600).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let candidates = engine.get_corrections("helo");
         assert!(!candidates.is_empty());
@@ -436,10 +456,11 @@ mod tests {
     #[test]
     fn test_text_correction_preserves_punctuation() {
         let mut engine = create_test_engine();
-        let mut trie = Trie::new();
-        trie.insert("hello", 1000);
-        trie.insert("world", 800);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("hello", 1000).unwrap();
+        builder.insert("world", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
             crate::language::detector::DetectorConfig {
@@ -483,10 +504,11 @@ mod tests {
     #[test]
     fn test_unicode_in_text() {
         let mut engine = create_test_engine();
-        let mut trie = Trie::new();
-        trie.insert("café", 1000);
-        trie.insert("naïve", 800);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("café", 1000).unwrap();
+        builder.insert("naïve", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
             crate::language::detector::DetectorConfig {
@@ -521,10 +543,11 @@ mod tests {
     #[test]
     fn test_word_with_apostrophe() {
         let mut engine = create_test_engine();
-        let mut trie = Trie::new();
-        trie.insert("don't", 1000);
-        trie.insert("isn't", 800);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("don't", 1000).unwrap();
+        builder.insert("isn't", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
             crate::language::detector::DetectorConfig {
@@ -562,11 +585,12 @@ mod tests {
     #[test]
     fn test_suggestions_sorted_by_distance_then_frequency() {
         let mut engine = create_test_engine();
-        let mut trie = Trie::new();
-        trie.insert("hello", 1000);
-        trie.insert("jello", 800);
-        trie.insert("hella", 600);
-        engine.add_dictionary("en", Arc::new(trie));
+        let mut builder = fst::MapBuilder::memory();
+        builder.insert("hella", 600).unwrap();
+        builder.insert("hello", 1000).unwrap();
+        builder.insert("jello", 800).unwrap();
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
             crate::language::detector::DetectorConfig {

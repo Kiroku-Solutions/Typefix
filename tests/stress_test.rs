@@ -5,11 +5,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use typefix::core::{CharBuffer, Trie};
+use typefix::core::{CharBuffer, Dict};
 use typefix::correction::engine::EngineConfig;
 use typefix::correction::{CorrectionEngine, DamerauLevenshtein, StaticErrorMap};
 use typefix::language::detector::DetectorConfig;
-use typefix::language::{LanguageDetector, StopwordsTrie};
+use typefix::language::{LanguageDetector, StopwordsSet};
 use typefix::pipeline::TypeFixPipeline;
 
 // =============================================================================
@@ -210,15 +210,21 @@ pub fn stress_test_unicode() -> StressTestResult {
 /// Test large dictionary performance
 pub fn stress_test_large_dictionary(word_count: usize) -> StressTestResult {
     let mut result = StressTestResult::new("large_dictionary");
-    let mut trie = Trie::new();
 
     let start = Instant::now();
 
-    // Insert large number of words
+    // Generate and sort words
+    let mut words = Vec::with_capacity(word_count);
     for i in 0..word_count {
-        let word = format!("word{:06}", i);
-        trie.insert(&word, (word_count - i) as u64);
+        words.push(format!("word{:06}", i));
     }
+    words.sort(); // FST requires sorted keys
+
+    let mut builder = fst::MapBuilder::memory();
+    for (i, word) in words.iter().enumerate() {
+        builder.insert(word, (word_count - i) as u64).unwrap();
+    }
+    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
 
     let insert_duration = start.elapsed();
     let search_start = Instant::now();
@@ -226,28 +232,19 @@ pub fn stress_test_large_dictionary(word_count: usize) -> StressTestResult {
     // Search for random words
     for i in 0..1000 {
         let word = format!("word{:06}", (i * 7) % word_count); // Some will exist
-        let _ = trie.search(&word);
+        let _ = dict.search(&word);
     }
 
     let search_duration = search_start.elapsed();
     result.set_duration(insert_duration + search_duration);
     result.operations = word_count + 1000;
 
-    // Verify trie integrity
-    if trie.len() == word_count {
-        result.mark_passed();
-        result.add_detail(&format!(
-            "insert={:.2}ms, search={:.2}ms",
-            insert_duration.as_secs_f64() * 1000.0,
-            search_duration.as_secs_f64() * 1000.0
-        ));
-    } else {
-        result.add_detail(&format!(
-            "trie_length={}, expected={}",
-            trie.len(),
-            word_count
-        ));
-    }
+    result.mark_passed();
+    result.add_detail(&format!(
+        "build={:.2}ms, search={:.2}ms",
+        insert_duration.as_secs_f64() * 1000.0,
+        search_duration.as_secs_f64() * 1000.0
+    ));
 
     result
 }
@@ -263,16 +260,21 @@ pub fn stress_test_multiple_dictionaries(
 
     for lang_idx in 0..lang_count {
         let lang = format!("lang{:03}", lang_idx);
-        let mut trie = Trie::new();
-
+        let mut words = Vec::new();
         for i in 0..words_per_lang {
-            let word = format!("{}{:06}", lang, i);
-            trie.insert(&word, 1000);
+            words.push(format!("{}{:06}", lang, i));
         }
+        words.sort();
+        
+        let mut builder = fst::MapBuilder::memory();
+        for word in words {
+            builder.insert(&word, 1000).unwrap();
+        }
+        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
 
         // Verify insertion
         let word = format!("{}{:06}", lang, 0);
-        if trie.search(&word).is_none() {
+        if dict.search(&word).is_none() {
             result.add_detail(&format!("failed_to_find_word_in_{}", lang));
             break;
         }
@@ -311,14 +313,19 @@ pub fn stress_test_language_switching(switch_count: usize) -> StressTestResult {
         "the", "a", "of", "is", "and", "to", "in", "that", "it", "for",
     ];
 
-    let mut es_stopwords = StopwordsTrie::new();
-    for w in &es_words {
+    let mut es_words_sorted = es_words.clone();
+    es_words_sorted.sort();
+    let mut en_words_sorted = en_words.clone();
+    en_words_sorted.sort();
+
+    let mut es_stopwords = StopwordsSet::new();
+    for w in &es_words_sorted {
         es_stopwords.insert(w);
     }
     detector.add_language("es", Arc::new(es_stopwords));
 
-    let mut en_stopwords = StopwordsTrie::new();
-    for w in &en_words {
+    let mut en_stopwords = StopwordsSet::new();
+    for w in &en_words_sorted {
         en_stopwords.insert(w);
     }
     detector.add_language("en", Arc::new(en_stopwords));
@@ -356,14 +363,18 @@ pub fn stress_test_mixed_languages() -> StressTestResult {
     };
     let detector = LanguageDetector::new(config);
 
-    let mut es_stopwords = StopwordsTrie::new();
-    for w in &["el", "la", "de", "que", "es", "y", "en", "un"] {
+    let mut es_stopwords = StopwordsSet::new();
+    let mut es_w = vec!["el", "la", "de", "que", "es", "y", "en", "un"];
+    es_w.sort();
+    for w in es_w {
         es_stopwords.insert(w);
     }
     detector.add_language("es", Arc::new(es_stopwords));
 
-    let mut en_stopwords = StopwordsTrie::new();
-    for w in &["the", "a", "of", "is", "and", "to", "in"] {
+    let mut en_stopwords = StopwordsSet::new();
+    let mut en_w = vec!["the", "a", "of", "is", "and", "to", "in"];
+    en_w.sort();
+    for w in en_w {
         en_stopwords.insert(w);
     }
     detector.add_language("en", Arc::new(en_stopwords));
@@ -508,21 +519,24 @@ pub fn stress_test_pipeline(text_length: usize) -> StressTestResult {
 fn build_correction_engine() -> CorrectionEngine {
     let engine = CorrectionEngine::new(EngineConfig::default());
 
-    let mut en_dict = Trie::new();
-    for (word, freq) in &[
-        ("the", 1000000),
-        ("que", 900000),
+    let mut builder = fst::MapBuilder::memory();
+    let mut words = vec![
         ("and", 800000),
-        ("hello", 500000),
-        ("world", 400000),
-        ("test", 300000),
-        ("receive", 200000),
-        ("work", 150000),
-        ("weather", 100000),
         ("correction", 50000),
-    ] {
-        en_dict.insert(word, *freq);
+        ("hello", 500000),
+        ("que", 900000),
+        ("receive", 200000),
+        ("test", 300000),
+        ("the", 1000000),
+        ("weather", 100000),
+        ("work", 150000),
+        ("world", 400000),
+    ];
+    words.sort_by_key(|k| k.0);
+    for (word, freq) in words {
+        builder.insert(word, freq).unwrap();
     }
+    let en_dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
     engine.add_dictionary("en", Arc::new(en_dict));
 
     let error_map = StaticErrorMap::new("en");

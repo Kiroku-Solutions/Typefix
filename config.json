@@ -14,7 +14,7 @@
   },
   "language_detection": {
     "window_size": 5,
-    "confidence_threshold": 0.85,
+    "confidence_threshold": 0.70,
     "hysteresis_zone": 0.10,
     "min_words_before_switch": 5,
     "dynamic_switching": true
