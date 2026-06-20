@@ -209,7 +209,7 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                             pipeline.set_language(&detection.language);
                         }
 
-                        if let Some(corrected) = result.corrected {
+                        if let Some(ref corrected) = result.corrected {
                             tracing::info!(
                                 "Correction: '{}' -> '{}'",
                                 result.original,
@@ -365,7 +365,13 @@ fn correct_word(word: &str) -> Result<()> {
     let state = typefix::get_state();
     let s = state.read();
 
-    let engine = CorrectionEngine::new(EngineConfig::default());
+    let engine_config = EngineConfig {
+        max_edit_distance: config.correction.max_edit_distance,
+        max_candidates: config.correction.max_corrections,
+        min_word_length: config.correction.min_word_length,
+        case_sensitive: config.correction.case_sensitive,
+    };
+    let engine = CorrectionEngine::new(engine_config);
     
     for (lang, dict) in &s.dictionaries {
         engine.add_dictionary(lang, dict.clone());
@@ -373,8 +379,8 @@ fn correct_word(word: &str) -> Result<()> {
     
     for (lang, em) in &s.error_maps {
         engine.add_error_map(em.clone(), lang);
-    }
-    
+}
+
     engine.set_language(&s.active_language);
 
     let result = engine.correct(word);

@@ -87,6 +87,14 @@ impl Default for PipelineConfig {
 impl TypeFixPipeline {
     /// Create a new pipeline with configuration
     pub fn new(config: PipelineConfig) -> Self {
+        let (sys_config, _) = crate::core::config::Config::load_or_default().unwrap_or_else(|_| (crate::core::config::Config::default(), std::path::PathBuf::new()));
+        let engine_config = EngineConfig {
+            max_edit_distance: sys_config.correction.max_edit_distance,
+            max_candidates: sys_config.correction.max_corrections,
+            min_word_length: sys_config.correction.min_word_length,
+            case_sensitive: sys_config.correction.case_sensitive,
+        };
+
         Self {
             buffer: CharBufferBuilder::new()
                 .capacity(config.buffer_size)
@@ -94,7 +102,7 @@ impl TypeFixPipeline {
             detector: Arc::new(LanguageDetector::new(
                 crate::language::detector::DetectorConfig::default(),
             )),
-            correction_engine: Arc::new(CorrectionEngine::new(EngineConfig::default())),
+            correction_engine: Arc::new(CorrectionEngine::new(engine_config)),
             config,
             event_callbacks: RwLock::new(Vec::new()),
         }
