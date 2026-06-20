@@ -12,9 +12,6 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: typefix-windows-x86_64.exe
-            asset_name: typefix-${{ github.ref_name }}-windows-x86_64.exe
-            use_wix: true
 
     runs-on: ${{ matrix.os }}
 
@@ -29,19 +26,19 @@ jobs:
       - name: Build Release Binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Install cargo-wix (Windows)
-        if: matrix.use_wix
-        run: cargo install cargo-wix
-
-      - name: Create MSI Installer (Windows)
-        if: matrix.use_wix
-        run: cargo wix --no-build --target ${{ matrix.target }} --nocapture
+      - name: Package Release (Windows)
+        run: |
+          New-Item -ItemType Directory -Force -Path typefix-release
+          Copy-Item -Path target\${{ matrix.target }}\release\typefix.exe -Destination typefix-release\
+          Copy-Item -Path config.json -Destination typefix-release\
+          Copy-Item -Path data -Destination typefix-release\ -Recurse
+          Compress-Archive -Path typefix-release\* -DestinationPath typefix-${{ github.ref_name }}-windows-x86_64.zip
+        shell: powershell
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-            target/wix/*.msi
+            typefix-${{ github.ref_name }}-windows-x86_64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
