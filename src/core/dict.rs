@@ -130,7 +130,10 @@ impl Dict {
                 // We calculate exact damerau distance to sort properly
                 let dist = damerau_distance(word, matched_word, max_distance);
                 if dist <= max_distance {
-                    results.push((matched_word.to_string(), dist, v));
+                    // Overlap filter (Gibberish prevention)
+                    if has_sufficient_overlap(word, matched_word) {
+                        results.push((matched_word.to_string(), dist, v));
+                    }
                 }
             }
         }
@@ -144,6 +147,36 @@ impl Dict {
 
         results
     }
+}
+
+/// Check if two words share at least 60% of their characters
+fn has_sufficient_overlap(word: &str, candidate: &str) -> bool {
+    let mut word_counts = std::collections::HashMap::new();
+    for c in word.chars() {
+        *word_counts.entry(c).or_insert(0) += 1;
+    }
+    
+    let mut overlap = 0;
+    for c in candidate.chars() {
+        if let Some(count) = word_counts.get_mut(&c) {
+            if *count > 0 {
+                overlap += 1;
+                *count -= 1;
+            }
+        }
+    }
+    
+    let max_len = word.chars().count().max(candidate.chars().count());
+    if max_len == 0 {
+        return false;
+    }
+    
+    // For very short words (1-2 chars), avoid aggressive filtering
+    if max_len <= 2 {
+        return overlap > 0;
+    }
+    
+    (overlap as f32 / max_len as f32) >= 0.6
 }
 
 /// Calculate Damerau-Levenshtein distance between two strings

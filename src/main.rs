@@ -359,26 +359,23 @@ fn run_repl() -> Result<()> {
 }
 
 fn correct_word(word: &str) -> Result<()> {
-    use std::sync::Arc;
-    use typefix::core::Dict;
     use typefix::{CorrectionEngine, EngineConfig};
+    let (config, _) = typefix::core::config::Config::load_or_default()?;
+    typefix::init(&config)?;
+    let state = typefix::get_state();
+    let s = state.read();
 
     let engine = CorrectionEngine::new(EngineConfig::default());
-
-    // Add test dictionary
-    let mut builder = fst::MapBuilder::memory();
-    let words = vec![
-        ("hello", 1000),
-        ("que", 700),
-        ("test", 600),
-        ("the", 800),
-        ("world", 900),
-    ];
-    for (w, f) in words {
-        builder.insert(w.as_bytes(), f).unwrap();
+    
+    for (lang, dict) in &s.dictionaries {
+        engine.add_dictionary(lang, dict.clone());
     }
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
-    engine.add_dictionary("en", Arc::new(dict));
+    
+    for (lang, em) in &s.error_maps {
+        engine.add_error_map(em.clone(), lang);
+    }
+    
+    engine.set_language(&s.active_language);
 
     let result = engine.correct(word);
     if let Some(corrected) = result.corrected {
