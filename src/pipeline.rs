@@ -93,6 +93,7 @@ impl TypeFixPipeline {
             max_candidates: sys_config.correction.max_corrections,
             min_word_length: sys_config.correction.min_word_length,
             case_sensitive: sys_config.correction.case_sensitive,
+            enforce_accents: sys_config.correction.enforce_accents,
         };
 
         Self {

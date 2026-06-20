@@ -55,6 +55,32 @@ pub fn decode_accents(s: &str) -> String {
     res
 }
 
+/// Strip Latin accented characters into their unaccented ASCII equivalents.
+pub fn strip_accents(s: &str) -> String {
+    let mut res = String::with_capacity(s.len());
+    for c in s.chars() {
+        let mapped = match c {
+            'á' => 'a',
+            'é' => 'e',
+            'í' => 'i',
+            'ó' => 'o',
+            'ú' => 'u',
+            'ñ' => 'n',
+            'ü' => 'u',
+            'ã' => 'a',
+            'õ' => 'o',
+            'ç' => 'c',
+            'â' => 'a',
+            'ê' => 'e',
+            'ô' => 'o',
+            'à' => 'a',
+            _ => c,
+        };
+        res.push(mapped);
+    }
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

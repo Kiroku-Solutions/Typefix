@@ -157,6 +157,8 @@ pub struct CorrectionConfig {
     pub learn_from_user: bool,
     /// User error map persistence path
     pub user_errors_path: Option<PathBuf>,
+    /// Whether to enforce accent corrections when words are otherwise identical
+    pub enforce_accents: bool,
 }
 
 impl Default for CorrectionConfig {
@@ -168,6 +170,7 @@ impl Default for CorrectionConfig {
             case_sensitive: false,
             learn_from_user: true,
             user_errors_path: Some(PathBuf::from("data/user_errors.json")),
+            enforce_accents: false,
         }
     }
 }
@@ -372,7 +375,8 @@ impl Config {
     "min_word_length": 2,
     "case_sensitive": false,
     "learn_from_user": true,
-    "user_errors_path": "data/user_errors.json"
+    "user_errors_path": "data/user_errors.json",
+    "enforce_accents": false
   },
   "hooks": {
     "keyboard_enabled": true,

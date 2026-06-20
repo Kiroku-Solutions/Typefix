@@ -4,6 +4,7 @@
 //! dictionaries to provide accurate typo corrections.
 
 use crate::core::Dict;
+use crate::core::encoder::strip_accents;
 use crate::correction::{DamerauLevenshtein, StaticErrorMap};
 use crate::language::LanguageDetector;
 use parking_lot::RwLock;
@@ -65,6 +66,8 @@ pub struct EngineConfig {
     pub min_word_length: usize,
     /// Case sensitivity
     pub case_sensitive: bool,
+    /// Enforce accent corrections
+    pub enforce_accents: bool,
 }
 
 impl Default for EngineConfig {
@@ -74,6 +77,7 @@ impl Default for EngineConfig {
             max_candidates: 3,
             min_word_length: 2,
             case_sensitive: false,
+            enforce_accents: false,
         }
     }
 }
@@ -188,6 +192,16 @@ impl CorrectionEngine {
         // Step 3: Fast path - known static error or user learned error(O(1))
         if let Some(map) = self.error_maps.read().get(&current_lang) {
             if let Some(correction) = map.lookup(&word_normalized) {
+                // If enforce_accents is false, skip correction if the only difference is accents
+                if !self.config.enforce_accents && strip_accents(&word_normalized) == strip_accents(&correction) {
+                    return CorrectionResult {
+                        original: word.to_string(),
+                        corrected: None,
+                        candidates: Vec::new(),
+                        source: CorrectionSource::None,
+                    };
+                }
+
                 let candidate = CorrectionCandidate {
                     word: correction.clone(),
                     distance: 0,
@@ -443,6 +457,7 @@ mod tests {
             max_candidates: 3,
             min_word_length: 2,
             case_sensitive: false,
+            enforce_accents: false,
         });
 
         // Add test dictionary

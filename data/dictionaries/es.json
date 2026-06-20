@@ -1,6 +1,38 @@
 {
   "words": [
     {
+      "word": "actualizar",
+      "frequency": 2000000
+    },
+    {
+      "word": "descargar",
+      "frequency": 2000000
+    },
+    {
+      "word": "instalar",
+      "frequency": 2000000
+    },
+    {
+      "word": "ejecutar",
+      "frequency": 2000000
+    },
+    {
+      "word": "implementar",
+      "frequency": 2000000
+    },
+    {
+      "word": "optimizar",
+      "frequency": 2000000
+    },
+    {
+      "word": "configurar",
+      "frequency": 2000000
+    },
+    {
+      "word": "procesar",
+      "frequency": 2000000
+    },
+    {
       "word": "de",
       "frequency": 14459520
     },

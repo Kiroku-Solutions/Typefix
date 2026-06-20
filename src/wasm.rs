@@ -1,4 +1,5 @@
 use crate::core::Dict;
+use crate::correction::StaticErrorMap;
 use crate::language::StopwordsSet;
 use crate::pipeline::{PipelineConfig, TypeFixPipeline};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ pub struct TypeFixWeb {
 impl TypeFixWeb {
     #[wasm_bindgen(constructor)]
     pub fn new(auto_correct: bool, enable_distance: bool, max_distance: usize) -> Self {
+        console_error_panic_hook::set_once();
         let config = PipelineConfig {
             auto_correct,
             detect_language: false,
@@ -54,6 +56,15 @@ impl TypeFixWeb {
         }
         
         self.pipeline.add_stopwords(lang, Arc::new(stopwords_set));
+        Ok(())
+    }
+
+    /// Load static errors from a JSON string
+    #[wasm_bindgen(js_name = loadStaticErrors)]
+    pub fn load_static_errors(&self, lang: &str, json_str: &str) -> Result<(), JsValue> {
+        let map = StaticErrorMap::from_json_str(lang, json_str)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse static errors JSON: {}", e)))?;
+        self.pipeline.add_error_map(lang, Arc::new(map));
         Ok(())
     }
 

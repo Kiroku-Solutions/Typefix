@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use fst::automaton::Levenshtein;
 use fst::{IntoStreamer, Map, Streamer};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use crate::core::encoder::{decode_accents, encode_accents};
 
@@ -216,7 +216,7 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
     let mut last_row: HashMap<char, usize> = HashMap::new();
 
     for (i, c1) in s1_chars.iter().enumerate() {
-        let mut last_col = 0;
+        let mut last_col: Option<usize> = None;
         for (j, c2) in s2_chars.iter().enumerate() {
             let cost = if c1 == c2 { 0 } else { 1 };
             let prev = matrix[i][j] + cost;
@@ -225,15 +225,16 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
 
             let mut trans = usize::MAX;
             if let Some(&prev_col) = last_row.get(c2) {
-                if prev_col < i && last_col < j {
-                    trans =
-                        matrix[prev_col][last_col] + (i - prev_col - 1) + 1 + (j - last_col - 1);
+                if let Some(l_col) = last_col {
+                    if prev_col < i && l_col < j {
+                        trans = matrix[prev_col][l_col] + (i - prev_col - 1) + 1 + (j - l_col - 1);
+                    }
                 }
             }
 
             matrix[i + 1][j + 1] = prev.min(del).min(ins).min(trans);
             if cost == 0 {
-                last_col = j;
+                last_col = Some(j);
             }
         }
         last_row.insert(*c1, i);

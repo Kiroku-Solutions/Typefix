@@ -41,10 +41,19 @@ impl StaticErrorMap {
         Ok(Self::new("unknown"))
     }
 
-    /// Load from JSON string with size validation
-    pub fn from_json(_json: &str) -> Result<Self> {
-        // Obsolete: static errors are compiled via phf in build.rs
-        Ok(Self::new("unknown"))
+    /// Load from JSON string
+    pub fn from_json_str(language: &str, json_str: &str) -> Result<Self> {
+        let map = Self::new(language);
+        let parsed: serde_json::Value = serde_json::from_str(json_str)?;
+        if let Some(errors) = parsed.get("errors").and_then(|e| e.as_object()) {
+            let mut inner = map.inner.write();
+            for (typo, correction) in errors {
+                if let Some(corr_str) = correction.as_str() {
+                    inner.user_errors.put(typo.to_lowercase(), corr_str.to_string());
+                }
+            }
+        }
+        Ok(map)
     }
 
     /// Look up a typo
@@ -61,8 +70,8 @@ impl StaticErrorMap {
             }
         }
 
-        // Check static errors compiled via PHF
-        STATIC_ERRORS.get(&typo_lower).map(|s| s.to_string())
+        let lookup_key = format!("{}_{}", self.inner.read().language, typo_lower);
+        STATIC_ERRORS.get(&lookup_key).map(|s| s.to_string())
     }
 
     /// Add a user correction
@@ -98,9 +107,10 @@ impl StaticErrorMap {
 
     /// Check if a word is a known typo
     pub fn is_known_typo(&self, word: &str) -> bool {
-        let mut inner = self.inner.write();
+        let inner = self.inner.read();
         let word_lower = word.to_lowercase();
-        STATIC_ERRORS.contains_key(&word_lower) || inner.user_errors.contains(&word_lower)
+        let lookup_key = format!("{}_{}", inner.language, word_lower);
+        STATIC_ERRORS.contains_key(&lookup_key) || inner.user_errors.contains(&word_lower)
     }
 
     /// Get frequency of a typo
@@ -111,10 +121,12 @@ impl StaticErrorMap {
 
     /// Get all known typos
     pub fn all_typos(&self) -> Vec<(String, String)> {
-        let mut inner = self.inner.write();
+        let inner = self.inner.read();
+        let prefix = format!("{}_", inner.language);
         let mut result: Vec<(String, String)> = STATIC_ERRORS
             .entries()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .filter(|(k, _)| k.starts_with(&prefix))
+            .map(|(k, v)| (k.strip_prefix(&prefix).unwrap().to_string(), v.to_string()))
             .collect();
 
         // Add user errors (may override static)
@@ -132,7 +144,7 @@ impl StaticErrorMap {
 
     /// Save user errors to file
     pub fn save_user_errors(&self, path: &Path) -> Result<()> {
-        let mut inner = self.inner.write();
+        let inner = self.inner.read();
         let mut user_errors: HashMap<String, String> = HashMap::new();
         for (k, v) in inner.user_errors.iter() {
             user_errors.insert(k.clone(), v.clone());

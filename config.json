@@ -25,7 +25,8 @@
     "min_word_length": 2,
     "case_sensitive": false,
     "learn_from_user": true,
-    "user_errors_path": "data/user_errors.json"
+    "user_errors_path": "data/user_errors.json",
+    "enforce_accents": false
   },
   "hooks": {
     "keyboard_enabled": true,
