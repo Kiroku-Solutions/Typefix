@@ -12,25 +12,19 @@ pub struct TypeFixWeb {
 #[wasm_bindgen]
 impl TypeFixWeb {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        auto_correct: bool,
-        detect_language: bool,
-        buffer_size: usize,
-    ) -> Self {
-        // We use default console_error_panic_hook for better errors in JS
-        // #[cfg(feature = "console_error_panic_hook")]
-        // console_error_panic_hook::set_once();
-
+    pub fn new(auto_correct: bool, enable_distance: bool, max_distance: usize) -> Self {
         let config = PipelineConfig {
             auto_correct,
-            detect_language,
-            buffer_size,
+            detect_language: false,
+            buffer_size: 64,
             suggestion_mode: false,
         };
 
-        Self {
-            pipeline: TypeFixPipeline::new(config),
-        }
+        let pipeline = TypeFixPipeline::new(config);
+
+
+
+        Self { pipeline }
     }
 
     /// Set the current language
@@ -95,5 +89,48 @@ impl TypeFixWeb {
             return Some(json);
         }
         None
+    }
+
+    /// Process an entire string statelessly
+    /// Returns a JSON array of PipelineEvents
+    #[wasm_bindgen(js_name = processString)]
+    pub fn process_string(&self, text: &str) -> String {
+        let results = self.pipeline.process_string(text);
+        
+        let mut json = String::new();
+        json.push('[');
+        
+        for (i, result) in results.iter().enumerate() {
+            if i > 0 {
+                json.push_str(", ");
+            }
+            json.push('{');
+            json.push_str(&format!("\"original\": \"{}\"", result.original));
+            
+            if let Some(corrected) = &result.corrected {
+                json.push_str(&format!(", \"corrected\": \"{}\"", corrected));
+            } else {
+                json.push_str(", \"corrected\": null");
+            }
+
+            if let Some(lang) = &result.detected_language {
+                json.push_str(&format!(
+                    ", \"detected_language\": {{\"code\": \"{}\", \"confidence\": {}}}",
+                    lang.language, lang.confidence
+                ));
+            } else {
+                json.push_str(", \"detected_language\": null");
+            }
+            json.push('}');
+        }
+        
+        json.push(']');
+        json
+    }
+
+    /// Clear the internal buffer
+    #[wasm_bindgen(js_name = clear)]
+    pub fn clear(&self) {
+        self.pipeline.clear();
     }
 }

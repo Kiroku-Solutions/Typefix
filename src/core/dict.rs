@@ -7,10 +7,33 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+#[cfg(not(target_arch = "wasm32"))]
+use memmap2::Mmap;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+pub enum DictData {
+    Mmap(std::sync::Arc<Mmap>),
+    Bytes(std::sync::Arc<[u8]>),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl AsRef<[u8]> for DictData {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::Mmap(m) => m.as_ref(),
+            Self::Bytes(b) => b.as_ref(),
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub type DictData = std::sync::Arc<[u8]>;
+
 /// Dictionary based on Finite State Transducers (FST) for high performance and minimal memory footprint.
 #[derive(Clone)]
 pub struct Dict {
-    map: Map<Vec<u8>>,
+    map: Map<DictData>,
     word_count: usize,
 }
 
@@ -24,20 +47,40 @@ impl std::fmt::Debug for Dict {
 }
 
 impl Dict {
-    /// Load a dictionary from pre-compiled FST bytes
+    #[cfg(target_arch = "wasm32")]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        let map = Map::new(bytes).context("Failed to load FST map from bytes")?;
+        let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
+        let map = Map::new(arc_bytes).context("Failed to load FST map from bytes")?;
+        let word_count = map.len();
+        Ok(Self { map, word_count })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
+        let data = DictData::Bytes(arc_bytes);
+        let map = Map::new(data).context("Failed to load FST map from bytes")?;
         let word_count = map.len();
         Ok(Self { map, word_count })
     }
 
     /// Load a dictionary from an FST file
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_fst_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let mut file = File::open(path)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        Self::from_bytes(bytes)
+        let file = File::open(path)?;
+        let mmap = unsafe { Mmap::map(&file)? };
+        let data = DictData::Mmap(std::sync::Arc::new(mmap));
+        let map = Map::new(data).context("Failed to load FST map from file")?;
+        let word_count = map.len();
+        Ok(Self { map, word_count })
     }
+
+    /// Load a dictionary from an FST file (WASM fallback - shouldn't happen, but just in case it compiles)
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_fst_file<P: AsRef<Path>>(_path: P) -> Result<Self> {
+        anyhow::bail!("Filesystem operations not supported in WASM")
+    }
+
 
     /// Search for an exact word match and return its frequency
     pub fn search(&self, word: &str) -> Option<u64> {

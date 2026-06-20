@@ -4,7 +4,6 @@
 
 use anyhow::Result;
 use parking_lot::RwLock;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,21 +14,16 @@ pub struct StaticErrorMap {
     inner: Arc<RwLock<ErrorMapInner>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ErrorMapInner {
-    /// Mapping from typo -> correction
-    errors: HashMap<String, String>,
-    /// Error frequency for ranking
-    frequency: HashMap<String, u64>,
     /// User-learned errors
-    user_errors: HashMap<String, String>,
-    /// Access tracking for user errors (typo -> access_counter)
-    access_tracker: HashMap<String, u64>,
-    /// Global counter for access tracking
-    access_counter: u64,
+    user_errors: lru::LruCache<String, String>,
     /// Language of this map
     language: String,
 }
+
+// Include the generated PHF map
+include!(concat!(env!("OUT_DIR"), "/static_errors.rs"));
 
 impl StaticErrorMap {
     /// Create a new empty error map
@@ -37,57 +31,20 @@ impl StaticErrorMap {
         Self {
             inner: Arc::new(RwLock::new(ErrorMapInner {
                 language: language.to_string(),
-                ..Default::default()
+                user_errors: lru::LruCache::new(std::num::NonZeroUsize::new(1000).unwrap()),
             })),
         }
     }
 
-    /// Maximum JSON file size in bytes (1MB) - prevents DoS from malicious files
-    const MAX_JSON_SIZE: usize = 1024 * 1024;
-
-    /// Load from JSON file with size limit
-    pub fn from_json_file(path: &Path) -> Result<Self> {
-        let metadata = std::fs::metadata(path)?;
-        if metadata.len() as usize > Self::MAX_JSON_SIZE {
-            anyhow::bail!(
-                "JSON file too large: {} bytes (max {})",
-                metadata.len(),
-                Self::MAX_JSON_SIZE
-            );
-        }
-        let content = std::fs::read_to_string(path)?;
-        Self::from_json(&content)
+    pub fn from_json_file(_path: &Path) -> Result<Self> {
+        // Obsolete: static errors are compiled via phf in build.rs
+        Ok(Self::new("unknown"))
     }
 
     /// Load from JSON string with size validation
-    pub fn from_json(json: &str) -> Result<Self> {
-        if json.len() > Self::MAX_JSON_SIZE {
-            anyhow::bail!(
-                "JSON too large: {} bytes (max {})",
-                json.len(),
-                Self::MAX_JSON_SIZE
-            );
-        }
-        #[derive(Deserialize)]
-        struct ErrorFile {
-            language: String,
-            errors: HashMap<String, String>,
-        }
-
-        let file: ErrorFile = serde_json::from_str(json)?;
-        let map = Self::new(&file.language);
-
-        {
-            let mut inner = map.inner.write();
-            inner.errors = file.errors;
-            // Default frequency for static errors
-            let keys: Vec<String> = inner.errors.keys().cloned().collect();
-            for key in keys {
-                inner.frequency.insert(key, 1000);
-            }
-        }
-
-        Ok(map)
+    pub fn from_json(_json: &str) -> Result<Self> {
+        // Obsolete: static errors are compiled via phf in build.rs
+        Ok(Self::new("unknown"))
     }
 
     /// Look up a typo
@@ -95,16 +52,17 @@ impl StaticErrorMap {
     /// Checks user errors first (higher priority), then static errors.
     /// Returns the correction if found.
     pub fn lookup(&self, typo: &str) -> Option<String> {
-        let inner = self.inner.read();
         let typo_lower = typo.to_lowercase();
-
-        // Check user errors first (learned corrections)
-        if let Some(correction) = inner.user_errors.get(&typo_lower) {
-            return Some(correction.clone());
+        
+        {
+            let mut inner = self.inner.write();
+            if let Some(correction) = inner.user_errors.get(&typo_lower) {
+                return Some(correction.clone());
+            }
         }
 
-        // Check static errors
-        inner.errors.get(&typo_lower).cloned()
+        // Check static errors compiled via PHF
+        STATIC_ERRORS.get(&typo_lower).map(|s| s.to_string())
     }
 
     /// Add a user correction
@@ -121,71 +79,49 @@ impl StaticErrorMap {
 
         {
             let mut inner = self.inner.write();
-            inner.access_counter += 1;
-            let counter = inner.access_counter;
-            inner.access_tracker.insert(typo_lower.clone(), counter);
-            
-            inner
-                .user_errors
-                .insert(typo_lower.clone(), correction_lower);
-            // Increment frequency
-            *inner.frequency.entry(typo_lower).or_insert(0) += 1;
-
-            if inner.user_errors.len() > 1000 {
-                if let Some(oldest) = inner.access_tracker.iter().min_by_key(|(_, &v)| v).map(|(k, _)| k.clone()) {
-                    inner.user_errors.remove(&oldest);
-                    inner.access_tracker.remove(&oldest);
-                }
-            }
+            inner.user_errors.put(typo_lower, correction_lower);
         }
     }
 
     /// Unlearn a correction (user marked it as wrong)
     pub fn unlearn(&self, typo: &str) {
         let mut inner = self.inner.write();
-        let typo_lower = typo.to_lowercase();
-        inner.user_errors.remove(&typo_lower);
-        inner.access_tracker.remove(&typo_lower);
+        inner.user_errors.pop(&typo.to_lowercase());
     }
 
     /// Insert a static error correction
     pub fn insert_static(&self, typo: &str, correction: &str) {
+        // Used in tests. In production this does nothing.
         let mut inner = self.inner.write();
-        inner
-            .errors
-            .insert(typo.to_lowercase(), correction.to_lowercase());
-        inner.frequency.insert(typo.to_lowercase(), 1000);
+        inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
     }
 
     /// Check if a word is a known typo
     pub fn is_known_typo(&self, word: &str) -> bool {
-        let inner = self.inner.read();
+        let mut inner = self.inner.write();
         let word_lower = word.to_lowercase();
-        inner.errors.contains_key(&word_lower) || inner.user_errors.contains_key(&word_lower)
+        STATIC_ERRORS.contains_key(&word_lower) || inner.user_errors.contains(&word_lower)
     }
 
     /// Get frequency of a typo
-    pub fn get_frequency(&self, typo: &str) -> u64 {
-        let inner = self.inner.read();
-        inner
-            .frequency
-            .get(&typo.to_lowercase())
-            .copied()
-            .unwrap_or(0)
+    pub fn get_frequency(&self, _typo: &str) -> u64 {
+        // Not needed for PHF anymore.
+        1000
     }
 
     /// Get all known typos
     pub fn all_typos(&self) -> Vec<(String, String)> {
-        let inner = self.inner.read();
-        let mut result: Vec<(String, String)> = inner
-            .errors
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+        let mut inner = self.inner.write();
+        let mut result: Vec<(String, String)> = STATIC_ERRORS
+            .entries()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
 
         // Add user errors (may override static)
-        for (k, v) in &inner.user_errors {
-            if !result.iter().any(|(key, _)| key == k) {
+        for (k, v) in inner.user_errors.iter() {
+            if let Some(pos) = result.iter().position(|(key, _)| key == k) {
+                result[pos].1 = v.clone();
+            } else {
                 result.push((k.clone(), v.clone()));
             }
         }
@@ -196,8 +132,11 @@ impl StaticErrorMap {
 
     /// Save user errors to file
     pub fn save_user_errors(&self, path: &Path) -> Result<()> {
-        let inner = self.inner.read();
-        let user_errors: HashMap<String, String> = inner.user_errors.clone();
+        let mut inner = self.inner.write();
+        let mut user_errors: HashMap<String, String> = HashMap::new();
+        for (k, v) in inner.user_errors.iter() {
+            user_errors.insert(k.clone(), v.clone());
+        }
 
         let json = serde_json::to_string_pretty(&user_errors)?;
         std::fs::write(path, json)?;
@@ -215,13 +154,7 @@ impl StaticErrorMap {
 
         let mut inner = self.inner.write();
         for (typo, correction) in errors {
-            let typo_lower = typo.to_lowercase();
-            inner.access_counter += 1;
-            let counter = inner.access_counter;
-            inner.access_tracker.insert(typo_lower.clone(), counter);
-            inner
-                .user_errors
-                .insert(typo_lower, correction.to_lowercase());
+            inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
         }
 
         Ok(())
@@ -231,14 +164,13 @@ impl StaticErrorMap {
     pub fn clear_user_errors(&self) {
         let mut inner = self.inner.write();
         inner.user_errors.clear();
-        inner.access_tracker.clear();
     }
 
     /// Get map statistics
     pub fn stats(&self) -> ErrorMapStats {
         let inner = self.inner.read();
         ErrorMapStats {
-            static_errors: inner.errors.len(),
+            static_errors: STATIC_ERRORS.len(),
             user_errors: inner.user_errors.len(),
             language: inner.language.clone(),
         }

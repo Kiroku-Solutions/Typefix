@@ -17,10 +17,10 @@ def fetch_and_save(url, output_path, is_freq_list=False):
             
             if is_freq_list:
                 parts = line.split()
-                if parts:
-                    words_list.append(parts[0])
+                if len(parts) >= 2:
+                    words_list.append({"word": parts[0], "frequency": int(parts[1])})
             else:
-                words_list.append(line)
+                words_list.append({"word": line, "frequency": 1})
                 
             if len(words_list) >= 15000:
                 break
@@ -28,8 +28,7 @@ def fetch_and_save(url, output_path, is_freq_list=False):
         # Generate JSON with the expected nested structure
         dict_json = {
             "words": [
-                {"word": w, "frequency": 1} 
-                for w in words_list if len(w) > 1
+                w for w in words_list if len(w["word"]) > 1
             ]
         }
         

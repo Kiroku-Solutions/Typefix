@@ -9,6 +9,14 @@ use crate::language::LanguageDetector;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
+fn titlecase(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 /// Correction candidate
 #[derive(Debug, Clone)]
 pub struct CorrectionCandidate {
@@ -89,6 +97,8 @@ pub struct CorrectionEngine {
     damerau: RwLock<DamerauLevenshtein>,
     /// Current language detector (interior mutability)
     detector: RwLock<Arc<LanguageDetector>>,
+    /// LRU Cache for fuzzy match results
+    fuzzy_cache: RwLock<lru::LruCache<String, CorrectionResult>>,
 }
 
 impl CorrectionEngine {
@@ -102,6 +112,7 @@ impl CorrectionEngine {
             detector: RwLock::new(Arc::new(LanguageDetector::new(
                 crate::language::detector::DetectorConfig::default(),
             ))),
+            fuzzy_cache: RwLock::new(lru::LruCache::new(std::num::NonZeroUsize::new(1000).unwrap())),
         }
     }
 
@@ -147,13 +158,34 @@ impl CorrectionEngine {
         }
 
         let current_lang = self.detector.read().get_language();
+        let is_uppercase = word.chars().all(|c| c.is_uppercase());
+        let is_titlecase = !is_uppercase && word.chars().next().map_or(false, |c| c.is_uppercase());
+        let word_lower = word.to_lowercase();
         let word_normalized = if self.config.case_sensitive {
             word.to_string()
         } else {
-            word.to_lowercase()
+            word_lower.clone()
         };
 
-        // Step 1: Check static error map (O(1))
+        // Step 2: Check fuzzy cache
+        {
+            let mut cache = self.fuzzy_cache.write();
+            if let Some(cached_res) = cache.get(&word_lower) {
+                let mut res = cached_res.clone();
+                if is_uppercase {
+                    if let Some(ref mut c) = res.corrected {
+                        *c = c.to_uppercase();
+                    }
+                } else if is_titlecase {
+                    if let Some(ref mut c) = res.corrected {
+                        *c = titlecase(c);
+                    }
+                }
+                return res;
+            }
+        }
+
+        // Step 3: Fast path - known static error or user learned error(O(1))
         if let Some(map) = self.error_maps.read().get(&current_lang) {
             if let Some(correction) = map.lookup(&word_normalized) {
                 let candidate = CorrectionCandidate {
@@ -194,13 +226,28 @@ impl CorrectionEngine {
             let candidates = self.find_dictionary_corrections(&word_normalized, dict);
 
             if !candidates.is_empty() {
-                let best = &candidates[0];
-                return CorrectionResult {
+                let best_match = &candidates[0];
+                let mut res = CorrectionResult {
                     original: word.to_string(),
-                    corrected: Some(best.word.clone()),
+                    corrected: Some(best_match.word.clone()),
                     candidates,
                     source: CorrectionSource::Dictionary,
                 };
+
+                // Cache the result BEFORE casing adjustments
+                {
+                    let mut cache = self.fuzzy_cache.write();
+                    cache.put(word_lower, res.clone());
+                }
+
+                // Preserve original casing
+                if is_uppercase {
+                    res.corrected = res.corrected.map(|c| c.to_uppercase());
+                } else if is_titlecase {
+                    res.corrected = res.corrected.map(|c| titlecase(&c));
+                }
+
+                return res;
             }
         }
 
