@@ -20,7 +20,7 @@
     "dynamic_switching": true
   },
   "correction": {
-    "max_edit_distance": 1,
+    "max_edit_distance": 2,
     "max_corrections": 3,
     "min_word_length": 2,
     "case_sensitive": false,

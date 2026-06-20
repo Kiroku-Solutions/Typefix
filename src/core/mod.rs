@@ -3,6 +3,7 @@
 pub mod buffer;
 pub mod config;
 pub mod dict;
+pub mod encoder;
 
 pub use buffer::{BufferEvent, CharBuffer, CharBufferBuilder};
 pub use config::Config;

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use crate::core::encoder::{decode_accents, encode_accents};
 
 #[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
@@ -84,12 +85,14 @@ impl Dict {
 
     /// Search for an exact word match and return its frequency
     pub fn search(&self, word: &str) -> Option<u64> {
-        self.map.get(word.as_bytes())
+        let encoded = encode_accents(word);
+        self.map.get(encoded.as_bytes())
     }
 
     /// Check if a word exists in the dictionary
     pub fn contains(&self, word: &str) -> bool {
-        self.map.contains_key(word.as_bytes())
+        let encoded = encode_accents(word);
+        self.map.contains_key(encoded.as_bytes())
     }
 
     /// Get the number of words in the dictionary
@@ -117,7 +120,8 @@ impl Dict {
         // when max_distance is 1. We cap FST distance at 2 because distance 3 is very slow.
         let fst_distance = if max_distance == 1 { 2 } else { max_distance };
         
-        let lev = match Levenshtein::new(word, fst_distance as u32) {
+        let encoded_word = encode_accents(word);
+        let lev = match Levenshtein::new(&encoded_word, fst_distance as u32) {
             Ok(l) => l,
             Err(_) => return Vec::new(),
         };
@@ -126,13 +130,16 @@ impl Dict {
         let mut results = Vec::new();
 
         while let Some((k, v)) = stream.next() {
-            if let Ok(matched_word) = std::str::from_utf8(k) {
-                // We calculate exact damerau distance to sort properly
-                let dist = damerau_distance(word, matched_word, max_distance);
+            if let Ok(matched_encoded) = std::str::from_utf8(k) {
+                // Decode the matched word back to its UTF-8 accented form
+                let matched_word = decode_accents(matched_encoded);
+                
+                // We calculate exact damerau distance to sort properly on the original UTF-8 characters
+                let dist = damerau_distance(word, &matched_word, max_distance);
                 if dist <= max_distance {
                     // Overlap filter (Gibberish prevention)
-                    if has_sufficient_overlap(word, matched_word) {
-                        results.push((matched_word.to_string(), dist, v));
+                    if has_sufficient_overlap(word, &matched_word) {
+                        results.push((matched_word, dist, v));
                     }
                 }
             }
@@ -257,6 +264,12 @@ impl Dict {
         
         // FST requires lexicographically sorted keys
         let mut entries = dict_file.words;
+        
+        // Encode accents before sorting
+        for entry in &mut entries {
+            entry.word = encode_accents(&entry.word);
+        }
+
         entries.sort_by(|a, b| a.word.cmp(&b.word));
 
         // Ensure unique keys
