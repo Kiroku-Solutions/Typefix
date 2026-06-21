@@ -81,7 +81,7 @@ fn main() {
 
     // Write the generated code to OUT_DIR
     let generated_code = format!(
-        "pub static STATIC_ERRORS: phf::Map<&'static str, &'static str> = \n{};\n",
+        "/// Map of static errors to their corrections\npub static STATIC_ERRORS: phf::Map<&'static str, &'static str> = \n{};\n",
         builder.build()
     );
 

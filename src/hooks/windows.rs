@@ -418,6 +418,12 @@ impl KeyboardHook for WindowsHook {
     fn send_text(&self, text: &str) -> Result<(), HookError> {
         send_keystrokes(text)
     }
+
+    fn is_window_active(&self, window_id: isize) -> bool {
+        unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as isize == window_id
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -467,10 +473,13 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                 }
             };
 
+            let window_id = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as isize };
+
             let hook_event = HookEvent {
                 event,
                 timestamp: kb_struct.time as u64,
                 modifiers,
+                window_id,
             };
 
             if let Some(log_keystrokes) = HOOK_LOG_KEYSTROKES.get() {

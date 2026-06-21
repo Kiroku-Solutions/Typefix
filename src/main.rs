@@ -187,6 +187,8 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
     }
 
     std::thread::spawn(move || {
+        let mut current_window_id = 0;
+
         loop {
             let event = match hook.receiver().recv() {
                 Ok(event) => event,
@@ -195,6 +197,11 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                     break;
                 }
             };
+
+            if current_window_id != 0 && event.window_id != current_window_id {
+                pipeline.clear();
+            }
+            current_window_id = event.window_id;
 
             match event.event {
                 KeyEvent::Char(ch) => {
@@ -210,6 +217,12 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                         }
 
                         if let Some(ref corrected) = result.corrected {
+                            if !hook.is_window_active(current_window_id) {
+                                tracing::warn!("Window focus changed! Aborting auto-correction to prevent injection into wrong window.");
+                                pipeline.clear();
+                                continue;
+                            }
+
                             tracing::info!(
                                 "Correction: '{}' -> '{}'",
                                 result.original,
@@ -370,6 +383,7 @@ fn correct_word(word: &str) -> Result<()> {
         max_candidates: config.correction.max_corrections,
         min_word_length: config.correction.min_word_length,
         case_sensitive: config.correction.case_sensitive,
+        enforce_accents: config.correction.enforce_accents,
     };
     let engine = CorrectionEngine::new(engine_config);
     

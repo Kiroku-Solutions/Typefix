@@ -23,7 +23,7 @@ fn build_engine(lang: &str, max_distance: usize) -> CorrectionEngine {
         max_edit_distance: max_distance,
         max_candidates: 5,
         min_word_length: 2,
-        case_sensitive: false,
+        case_sensitive: false, enforce_accents: false,
     });
     engine.add_dictionary(lang, Arc::new(dict));
     engine.add_error_map(Arc::new(err_map), lang);

@@ -26,7 +26,7 @@ fn main() {
         max_edit_distance: 2,
         max_candidates: 5,
         min_word_length: 2,
-        case_sensitive: false,
+        case_sensitive: false, enforce_accents: false,
     });
     engine.add_dictionary("es", Arc::new(es_dict));
     engine.add_dictionary("en", Arc::new(en_dict));

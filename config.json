@@ -2,7 +2,7 @@
   "data_path": "data",
   "default_language": "en",
   "supported_languages": ["en", "es", "pt"],
-  "user_preferred_language": "en",
+  "user_preferred_language": null,
   "logging": {
     "level": "info",
     "file": null,

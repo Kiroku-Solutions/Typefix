@@ -884,6 +884,7 @@ fn build_test_engine_with_dict() -> CorrectionEngine {
         max_candidates: 3,
         min_word_length: 2,
         case_sensitive: false,
+        enforce_accents: false,
     });
 
     let mut builder = fst::MapBuilder::memory();

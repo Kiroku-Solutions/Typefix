@@ -8,7 +8,7 @@ fn main() {
         max_edit_distance: 1,
         max_candidates: 3,
         min_word_length: 2,
-        case_sensitive: false,
+        case_sensitive: false, enforce_accents: false,
     });
 
     let fst_bytes = std::fs::read("data/dictionaries/es.fst").unwrap();

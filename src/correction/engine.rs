@@ -161,12 +161,26 @@ impl CorrectionEngine {
             };
         }
 
+        let trimmed_word = word.trim_matches(&['-', '\''][..]);
+        if trimmed_word.is_empty() {
+            return CorrectionResult {
+                original: word.to_string(),
+                corrected: None,
+                candidates: Vec::new(),
+                source: CorrectionSource::None,
+            };
+        }
+
+        let prefix_len = word.find(trimmed_word).unwrap_or(0);
+        let prefix = &word[..prefix_len];
+        let suffix = &word[prefix_len + trimmed_word.len()..];
+
         let current_lang = self.detector.read().get_language();
-        let is_uppercase = word.chars().all(|c| c.is_uppercase());
-        let is_titlecase = !is_uppercase && word.chars().next().map_or(false, |c| c.is_uppercase());
-        let word_lower = word.to_lowercase();
+        let is_uppercase = trimmed_word.chars().all(|c| c.is_uppercase());
+        let is_titlecase = !is_uppercase && trimmed_word.chars().next().map_or(false, |c| c.is_uppercase());
+        let word_lower = trimmed_word.to_lowercase();
         let word_normalized = if self.config.case_sensitive {
-            word.to_string()
+            trimmed_word.to_string()
         } else {
             word_lower.clone()
         };
@@ -176,6 +190,7 @@ impl CorrectionEngine {
             let mut cache = self.fuzzy_cache.write();
             if let Some(cached_res) = cache.get(&word_lower) {
                 let mut res = cached_res.clone();
+                res.original = word.to_string(); // Restore full original
                 if is_uppercase {
                     if let Some(ref mut c) = res.corrected {
                         *c = c.to_uppercase();
@@ -184,6 +199,9 @@ impl CorrectionEngine {
                     if let Some(ref mut c) = res.corrected {
                         *c = titlecase(c);
                     }
+                }
+                if let Some(ref mut c) = res.corrected {
+                    *c = format!("{}{}{}", prefix, c, suffix);
                 }
                 return res;
             }
@@ -202,15 +220,18 @@ impl CorrectionEngine {
                     };
                 }
 
+                let mut final_correction = correction.clone();
+                final_correction = format!("{}{}{}", prefix, final_correction, suffix);
+
                 let candidate = CorrectionCandidate {
-                    word: correction.clone(),
+                    word: final_correction.clone(),
                     distance: 0,
                     frequency: map.get_frequency(&word_normalized),
                     source: CorrectionSource::UserKnown,
                 };
                 return CorrectionResult {
                     original: word.to_string(),
-                    corrected: Some(correction),
+                    corrected: Some(final_correction),
                     candidates: vec![candidate],
                     source: CorrectionSource::UserKnown,
                 };
@@ -241,9 +262,12 @@ impl CorrectionEngine {
 
             if !candidates.is_empty() {
                 let best_match = &candidates[0];
+                let mut final_correction = best_match.word.clone();
+                let corrected_with_fix = format!("{}{}{}", prefix, final_correction, suffix);
+
                 let mut res = CorrectionResult {
                     original: word.to_string(),
-                    corrected: Some(best_match.word.clone()),
+                    corrected: Some(corrected_with_fix),
                     candidates,
                     source: CorrectionSource::Dictionary,
                 };

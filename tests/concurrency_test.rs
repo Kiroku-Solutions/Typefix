@@ -49,9 +49,10 @@ fn shared_correction_engine() -> Arc<CorrectionEngine> {
 
     let engine = CorrectionEngine::new(EngineConfig {
         max_edit_distance: 2,
-        max_candidates: 5,
-        min_word_length: 2,
+        max_candidates: 3,
+        min_word_length: 3,
         case_sensitive: false,
+        enforce_accents: false,
     });
     engine.add_dictionary("en", Arc::new(dict));
     engine.add_error_map(Arc::new(errors), "en");

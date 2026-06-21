@@ -11,10 +11,13 @@ use crate::core::encoder::{decode_accents, encode_accents};
 #[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
 
+/// Dictionary data storage
 #[cfg(not(target_arch = "wasm32"))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DictData {
+    /// Memory-mapped file data
     Mmap(std::sync::Arc<Mmap>),
+    /// In-memory bytes data
     Bytes(std::sync::Arc<[u8]>),
 }
 
@@ -48,6 +51,7 @@ impl std::fmt::Debug for Dict {
 }
 
 impl Dict {
+    /// Load dictionary from bytes (WASM)
     #[cfg(target_arch = "wasm32")]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
@@ -56,6 +60,7 @@ impl Dict {
         Ok(Self { map, word_count })
     }
 
+    /// Load dictionary from bytes
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
@@ -136,7 +141,7 @@ impl Dict {
                 
                 // We calculate exact damerau distance to sort properly on the original UTF-8 characters
                 let dist = damerau_distance(word, &matched_word, max_distance);
-                if dist <= max_distance {
+                if dist <= max_distance * 10 {
                     // Overlap filter (Gibberish prevention)
                     if has_sufficient_overlap(word, &matched_word) {
                         results.push((matched_word, dist, v));
@@ -186,13 +191,41 @@ fn has_sufficient_overlap(word: &str, candidate: &str) -> bool {
     (overlap as f32 / max_len as f32) >= 0.6
 }
 
+fn get_qwerty_cost(c1: char, c2: char) -> usize {
+    if c1 == c2 {
+        return 0;
+    }
+    
+    let c1 = c1.to_ascii_lowercase();
+    let c2 = c2.to_ascii_lowercase();
+    
+    let adjacents = [
+        ('q', 'w'), ('w', 'e'), ('e', 'r'), ('r', 't'), ('t', 'y'), ('y', 'u'), ('u', 'i'), ('i', 'o'), ('o', 'p'),
+        ('a', 's'), ('s', 'd'), ('d', 'f'), ('f', 'g'), ('g', 'h'), ('h', 'j'), ('j', 'k'), ('k', 'l'),
+        ('z', 'x'), ('x', 'c'), ('c', 'v'), ('v', 'b'), ('b', 'n'), ('n', 'm'),
+        ('q', 'a'), ('w', 's'), ('e', 'd'), ('r', 'f'), ('t', 'g'), ('y', 'h'), ('u', 'j'), ('i', 'k'), ('o', 'l'),
+        ('a', 'z'), ('s', 'x'), ('d', 'c'), ('f', 'v'), ('g', 'b'), ('h', 'n'), ('j', 'm'),
+        ('w', 'a'), ('e', 's'), ('r', 'd'), ('t', 'f'), ('y', 'g'), ('u', 'h'), ('i', 'j'), ('o', 'k'), ('p', 'l'),
+        ('s', 'z'), ('d', 'x'), ('f', 'c'), ('g', 'v'), ('h', 'b'), ('j', 'n'), ('k', 'm'),
+    ];
+    
+    for &(a, b) in &adjacents {
+        if (c1 == a && c2 == b) || (c1 == b && c2 == a) {
+            return 5;
+        }
+    }
+    
+    10
+}
+
 /// Calculate Damerau-Levenshtein distance between two strings
 fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
+    let scaled_max = max_dist * 10;
     if s1.is_empty() {
-        return s2.chars().count().min(max_dist + 1);
+        return (s2.chars().count() * 10).min(scaled_max + 1);
     }
     if s2.is_empty() {
-        return s1.chars().count().min(max_dist + 1);
+        return (s1.chars().count() * 10).min(scaled_max + 1);
     }
 
     let s1_chars: Vec<char> = s1.chars().collect();
@@ -200,17 +233,17 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
     let len1 = s1_chars.len();
     let len2 = s2_chars.len();
 
-    if (len1 as i64 - len2 as i64).unsigned_abs() as usize > max_dist {
-        return max_dist + 1;
+    if ((len1 as i64 - len2 as i64).unsigned_abs() as usize * 10) > scaled_max {
+        return scaled_max + 1;
     }
 
     let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
 
     for (i, row) in matrix.iter_mut().enumerate().take(len1 + 1) {
-        row[0] = i;
+        row[0] = i * 10;
     }
     for (j, val) in matrix[0].iter_mut().enumerate().take(len2 + 1) {
-        *val = j;
+        *val = j * 10;
     }
 
     let mut last_row: HashMap<char, usize> = HashMap::new();
@@ -218,16 +251,16 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
     for (i, c1) in s1_chars.iter().enumerate() {
         let mut last_col: Option<usize> = None;
         for (j, c2) in s2_chars.iter().enumerate() {
-            let cost = if c1 == c2 { 0 } else { 1 };
+            let cost = get_qwerty_cost(*c1, *c2);
             let prev = matrix[i][j] + cost;
-            let del = matrix[i][j + 1] + 1;
-            let ins = matrix[i + 1][j] + 1;
+            let del = matrix[i][j + 1] + 10;
+            let ins = matrix[i + 1][j] + 10;
 
             let mut trans = usize::MAX;
             if let Some(&prev_col) = last_row.get(c2) {
                 if let Some(l_col) = last_col {
                     if prev_col < i && l_col < j {
-                        trans = matrix[prev_col][l_col] + (i - prev_col - 1) + 1 + (j - l_col - 1);
+                        trans = matrix[prev_col][l_col] + ((i - prev_col - 1) * 10) + 10 + ((j - l_col - 1) * 10);
                     }
                 }
             }
@@ -240,7 +273,7 @@ fn damerau_distance(s1: &str, s2: &str, max_dist: usize) -> usize {
         last_row.insert(*c1, i);
     }
 
-    matrix[len1][len2].min(max_dist + 1)
+    matrix[len1][len2].min(scaled_max + 1)
 }
 
 /// JSON compilation helper

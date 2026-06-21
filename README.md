@@ -1,4 +1,4 @@
-﻿# TypeFix
+# TypeFix
 
 **Hyper-lightweight, zero-latency typo correction and language detection engine written in Rust.**
 
@@ -180,6 +180,23 @@ data/
     ├── es.json
     └── en.json
 ```
+
+### Importing Hunspell Dictionaries
+
+TypeFix achieves its massive scale by pre-compiling full Hunspell dictionaries (e.g., from LibreOffice or Mozilla) into our ultra-fast FST format offline.
+
+1. Generate an expanded wordlist using the `unmunch` command (from `hunspell-tools`):
+   ```bash
+   unmunch es_ES.dic es_ES.aff > expanded.txt
+   ```
+2. Convert the wordlist to TypeFix JSON format:
+   ```bash
+   python scripts/import_hunspell.py expanded.txt es.json
+   ```
+3. Compile to FST:
+   ```bash
+   cargo run --bin typefix -- build-dict es.json data/dictionaries/es.fst
+   ```
 
 ### Dictionary Format
 

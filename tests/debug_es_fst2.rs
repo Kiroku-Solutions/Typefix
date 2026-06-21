@@ -1,3 +1,5 @@
+use fst::IntoStreamer;
+
 #[test]
 fn test_fst2() {
     let bytes = std::fs::read("t:/Kiroku/Kiroku/Kiroku-landing/public/data/dictionaries/es.fst").unwrap();

@@ -221,7 +221,7 @@ impl LanguageDetector {
                 for (lang, dict) in dicts.iter() {
                     if dict.contains(word) {
                         if let Some(score) = scores.get_mut(lang) {
-                            *score += 0.5;
+                            *score += 0.1;
                         }
                     }
                 }

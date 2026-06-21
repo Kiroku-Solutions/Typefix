@@ -254,6 +254,7 @@ pub struct PipelineResult {
 }
 
 impl TypeFixPipeline {
+    /// Create a simple pipeline instance for testing or demonstration
     pub fn simple() -> Self {
         let pipeline = Self::new(PipelineConfig::default());
 

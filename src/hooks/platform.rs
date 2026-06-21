@@ -76,6 +76,8 @@ pub struct HookEvent {
     pub timestamp: u64,
     /// Modifier state
     pub modifiers: Modifiers,
+    /// Window ID where the event occurred
+    pub window_id: isize,
 }
 
 /// Keyboard modifiers state
@@ -139,6 +141,12 @@ pub trait KeyboardHook: Send {
 
     /// Send text keystrokes to the system
     fn send_text(&self, text: &str) -> Result<(), HookError>;
+
+    /// Check if window is still active
+    fn is_window_active(&self, window_id: isize) -> bool {
+        let _ = window_id;
+        true
+    }
 }
 
 /// Hook errors
@@ -218,6 +226,7 @@ impl MockHook {
                 .unwrap_or_default()
                 .as_millis() as u64,
             modifiers: Modifiers::default(),
+            window_id: 0,
         };
         if let Some(ref sender) = self.sender {
             let _ = sender.send(hook_event);
