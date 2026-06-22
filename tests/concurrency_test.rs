@@ -37,7 +37,7 @@ fn shared_correction_engine() -> Arc<CorrectionEngine> {
     for (w, freq) in words {
         builder.insert(w, freq).unwrap();
     }
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
 
     let errors = {
         let e = StaticErrorMap::new("en");

@@ -26,13 +26,32 @@ def main():
     parser = argparse.ArgumentParser(description="Convert a raw wordlist (e.g. from unmunch) to TypeFix JSON format.")
     parser.add_argument("input_txt", help="Path to the expanded wordlist text file")
     parser.add_argument("output_json", help="Path to the output JSON file (e.g. es.json)")
-    parser.add_argument("--default-freq", type=int, default=10, help="Default frequency for expanded words")
+    parser.add_argument("--freq-file", help="Path to a text file with word frequencies (format: 'word freq')")
+    parser.add_argument("--default-freq", type=int, default=1, help="Default frequency for expanded words if not in freq-file")
     
     args = parser.parse_args()
     
     print(f"Reading wordlist from {args.input_txt}...")
     words_map = {}
     
+    # Load frequencies if provided
+    freq_map = {}
+    if args.freq_file:
+        print(f"Loading frequencies from {args.freq_file}...")
+        try:
+            with open(args.freq_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        try:
+                            # Usually format is 'word count'
+                            freq = int(parts[1])
+                            freq_map[parts[0].lower()] = freq
+                        except ValueError:
+                            pass
+        except Exception as e:
+            print(f"Warning: Could not read frequency file: {e}")
+
     try:
         with open(args.input_txt, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
@@ -43,7 +62,8 @@ def main():
                 word = word.strip("'-")
                 
                 if word and len(word) > 1:
-                    words_map[word] = args.default_freq
+                    # Look up freq, or use default
+                    words_map[word] = freq_map.get(word, args.default_freq)
     except Exception as e:
         print(f"Error reading input file: {e}")
         sys.exit(1)

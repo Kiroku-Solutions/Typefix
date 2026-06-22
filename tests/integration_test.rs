@@ -113,7 +113,6 @@ impl HookEditorSimulator {
     fn new() -> Self {
         let hook = MockHook::new(HookConfig {
             enabled: true,
-            log_keystrokes: false,
             mode: HookMode::System,
         });
 
@@ -602,7 +601,7 @@ fn test_cli_correct_basic() {
     let mut builder = fst::MapBuilder::memory();
     builder.insert("hello", 1000).unwrap();
     builder.insert("world", 900).unwrap();
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("hellp");
@@ -618,7 +617,7 @@ fn test_cli_correct_valid_word() {
 
     let mut builder = fst::MapBuilder::memory();
     builder.insert("hello", 1000).unwrap();
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("hello");
@@ -635,7 +634,7 @@ fn test_cli_correct_transposition() {
 
     let mut builder = fst::MapBuilder::memory();
     builder.insert("the", 1000).unwrap();
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     engine.add_dictionary("en", Arc::new(dict));
 
     let result = engine.correct("teh");

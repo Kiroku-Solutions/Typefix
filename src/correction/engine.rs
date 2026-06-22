@@ -493,7 +493,7 @@ mod tests {
         builder.insert("que", 500).unwrap();
         builder.insert("the", 10000).unwrap();
         builder.insert("world", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
@@ -532,7 +532,7 @@ mod tests {
         builder.insert("hello", 1000).unwrap();
         builder.insert("jello", 800).unwrap();
         builder.insert("yello", 600).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let candidates = engine.get_corrections("helo");
@@ -545,7 +545,7 @@ mod tests {
         let mut builder = fst::MapBuilder::memory();
         builder.insert("hello", 1000).unwrap();
         builder.insert("world", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
@@ -593,7 +593,7 @@ mod tests {
         let mut builder = fst::MapBuilder::memory();
         builder.insert("café", 1000).unwrap();
         builder.insert("naïve", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
@@ -632,7 +632,7 @@ mod tests {
         let mut builder = fst::MapBuilder::memory();
         builder.insert("don't", 1000).unwrap();
         builder.insert("isn't", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(
@@ -675,7 +675,7 @@ mod tests {
         builder.insert("hella", 600).unwrap();
         builder.insert("hello", 1000).unwrap();
         builder.insert("jello", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         engine.add_dictionary("en", Arc::new(dict));
 
         let detector = Arc::new(LanguageDetector::new(

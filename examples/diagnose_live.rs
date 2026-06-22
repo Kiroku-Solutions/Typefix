@@ -15,7 +15,6 @@ fn main() {
         user_preferred_language: Some("en".to_string()),
         hooks: typefix::core::config::HooksConfig {
             keyboard_enabled: true,
-            log_keystrokes: true,  // <-- force keystroke logging
             mode: typefix::core::config::HookMode::System,
             target_app: None,
         },
@@ -26,7 +25,6 @@ fn main() {
 
     let hook_config = typefix::hooks::platform::HookConfig {
         enabled: true,
-        log_keystrokes: true,  // <-- force keystroke logging in hook
         mode: typefix::hooks::platform::HookMode::System,
     };
 
@@ -98,13 +96,8 @@ fn main() {
                                 corrected
                             );
                             let backspaces = pr.original.chars().count();
-                            for _ in 0..backspaces {
-                                if let Err(e) = hook.send_text("\x08") {
-                                    tracing::error!("Failed to send backspace: {}", e);
-                                }
-                            }
-                            if let Err(e) = hook.send_text(corrected) {
-                                tracing::error!("Failed to send correction: {}", e);
+                            if let Err(e) = hook.send_correction_atomic(backspaces, corrected, 0) {
+                                tracing::error!("Failed to send correction atomically: {}", e);
                             }
                         }
                     }

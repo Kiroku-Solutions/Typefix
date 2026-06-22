@@ -11,28 +11,49 @@ use crate::core::encoder::{decode_accents, encode_accents};
 #[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
 
+/// Magic bytes for TypeFix FST files
+pub const FST_MAGIC: &[u8; 4] = b"TFX1";
+
 /// Dictionary data storage
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub enum DictData {
     /// Memory-mapped file data
-    Mmap(std::sync::Arc<Mmap>),
+    Mmap(std::sync::Arc<Mmap>, usize),
     /// In-memory bytes data
-    Bytes(std::sync::Arc<[u8]>),
+    Bytes(std::sync::Arc<[u8]>, usize),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl AsRef<[u8]> for DictData {
     fn as_ref(&self) -> &[u8] {
         match self {
-            Self::Mmap(m) => m.as_ref(),
-            Self::Bytes(b) => b.as_ref(),
+            Self::Mmap(m, offset) => &m.as_ref()[*offset..],
+            Self::Bytes(b, offset) => &b.as_ref()[*offset..],
         }
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-pub type DictData = std::sync::Arc<[u8]>;
+#[derive(Clone)]
+pub struct DictData {
+    bytes: std::sync::Arc<[u8]>,
+    offset: usize,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl AsRef<[u8]> for DictData {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes.as_ref()[self.offset..]
+    }
+}
+
+/// Helper to wrap raw FST bytes with our magic bytes
+pub fn wrap_fst_bytes(fst_bytes: &[u8]) -> Vec<u8> {
+    let mut bytes = FST_MAGIC.to_vec();
+    bytes.extend_from_slice(fst_bytes);
+    bytes
+}
 
 /// Dictionary based on Finite State Transducers (FST) for high performance and minimal memory footprint.
 #[derive(Clone)]
@@ -54,8 +75,15 @@ impl Dict {
     /// Load dictionary from bytes (WASM)
     #[cfg(target_arch = "wasm32")]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        if bytes.len() < 16 {
+            anyhow::bail!("FST bytes too small");
+        }
+        if &bytes[0..4] != FST_MAGIC {
+            anyhow::bail!("Invalid FST magic bytes");
+        }
         let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
-        let map = Map::new(arc_bytes).context("Failed to load FST map from bytes")?;
+        let data = DictData { bytes: arc_bytes, offset: 4 };
+        let map = Map::new(data).context("Failed to load FST map from bytes")?;
         let word_count = map.len();
         Ok(Self { map, word_count })
     }
@@ -63,8 +91,14 @@ impl Dict {
     /// Load dictionary from bytes
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        if bytes.len() < 16 {
+            anyhow::bail!("FST bytes too small");
+        }
+        if &bytes[0..4] != FST_MAGIC {
+            anyhow::bail!("Invalid FST magic bytes");
+        }
         let arc_bytes: std::sync::Arc<[u8]> = bytes.into();
-        let data = DictData::Bytes(arc_bytes);
+        let data = DictData::Bytes(arc_bytes, 4);
         let map = Map::new(data).context("Failed to load FST map from bytes")?;
         let word_count = map.len();
         Ok(Self { map, word_count })
@@ -73,9 +107,18 @@ impl Dict {
     /// Load a dictionary from an FST file
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_fst_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
+        let mut file = File::open(path)?;
+        let metadata = file.metadata()?;
+        if metadata.len() < 16 {
+            anyhow::bail!("FST file too small");
+        }
+        let mut header = [0u8; 4];
+        std::io::Read::read_exact(&mut file, &mut header)?;
+        if &header != FST_MAGIC {
+            anyhow::bail!("Invalid FST magic bytes");
+        }
         let mmap = unsafe { Mmap::map(&file)? };
-        let data = DictData::Mmap(std::sync::Arc::new(mmap));
+        let data = DictData::Mmap(std::sync::Arc::new(mmap), 4);
         let map = Map::new(data).context("Failed to load FST map from file")?;
         let word_count = map.len();
         Ok(Self { map, word_count })
@@ -318,6 +361,7 @@ impl Dict {
 
         let bytes = builder.into_inner()?;
         let mut file = File::create(fst_path)?;
+        file.write_all(FST_MAGIC)?;
         file.write_all(&bytes)?;
 
         Ok(())

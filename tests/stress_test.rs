@@ -224,7 +224,7 @@ pub fn stress_test_large_dictionary(word_count: usize) -> StressTestResult {
     for (i, word) in words.iter().enumerate() {
         builder.insert(word, (word_count - i) as u64).unwrap();
     }
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
 
     let insert_duration = start.elapsed();
     let search_start = Instant::now();
@@ -270,7 +270,7 @@ pub fn stress_test_multiple_dictionaries(
         for word in words {
             builder.insert(&word, 1000).unwrap();
         }
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
 
         // Verify insertion
         let word = format!("{}{:06}", lang, 0);
@@ -536,7 +536,7 @@ fn build_correction_engine() -> CorrectionEngine {
     for (word, freq) in words {
         builder.insert(word, freq).unwrap();
     }
-    let en_dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let en_dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     engine.add_dictionary("en", Arc::new(en_dict));
 
     let error_map = StaticErrorMap::new("en");

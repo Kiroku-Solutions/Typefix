@@ -98,8 +98,6 @@ pub struct Modifiers {
 pub struct HookConfig {
     /// Enable hook
     pub enabled: bool,
-    /// Log all keystrokes (for debugging)
-    pub log_keystrokes: bool,
     /// Hook mode
     pub mode: HookMode,
 }
@@ -119,7 +117,6 @@ impl Default for HookConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            log_keystrokes: false,
             mode: HookMode::System,
         }
     }
@@ -146,6 +143,17 @@ pub trait KeyboardHook: Send {
     fn is_window_active(&self, window_id: isize) -> bool {
         let _ = window_id;
         true
+    }
+
+    /// Atomically send backspaces and text, ensuring window hasn't changed.
+    fn send_correction_atomic(&self, backspaces: usize, text: &str, window_id: isize) -> Result<(), HookError> {
+        if !self.is_window_active(window_id) {
+            return Err(HookError::InjectionFailed("Window changed".into()));
+        }
+        for _ in 0..backspaces {
+            self.send_text("\x08")?;
+        }
+        self.send_text(text)
     }
 }
 
@@ -419,7 +427,6 @@ mod tests {
     fn test_hook_config_default() {
         let config = HookConfig::default();
         assert!(config.enabled);
-        assert!(!config.log_keystrokes);
         assert!(matches!(config.mode, HookMode::System));
     }
 

@@ -31,7 +31,6 @@
   "hooks": {
     "keyboard_enabled": true,
     "mode": "system",
-    "target_app": null,
-    "log_keystrokes": false
+    "target_app": null
   }
 }

@@ -297,7 +297,6 @@ impl KeyboardHook for WindowsHook {
 
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
-        let log_keystrokes = self.config.log_keystrokes;
 
         let tx = self.sender.lock()
             .map_err(|_| HookError::InitFailed("lock poisoned".into()))?
@@ -310,7 +309,6 @@ impl KeyboardHook for WindowsHook {
                 *guard = Some(tx);
             }
         }
-        HOOK_LOG_KEYSTROKES.get_or_init(|| AtomicBool::new(log_keystrokes));
 
         let native_thread_id = Arc::clone(&self.native_thread_id);
 
@@ -424,6 +422,45 @@ impl KeyboardHook for WindowsHook {
             windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as isize == window_id
         }
     }
+
+    fn send_correction_atomic(&self, backspaces: usize, text: &str, window_id: isize) -> Result<(), HookError> {
+        if !self.is_window_active(window_id) {
+            return Err(HookError::InjectionFailed("Window changed".into()));
+        }
+
+        let mut inputs: Vec<INPUT> = Vec::with_capacity((backspaces + text.chars().count()) * 4);
+
+        for _ in 0..backspaces {
+            send_backspace(&mut inputs);
+        }
+
+        for c in text.chars() {
+            match c {
+                '\r' => send_enter(&mut inputs),
+                '\n' => send_char(c, &mut inputs),
+                '\x08' => send_backspace(&mut inputs),
+                _ => send_char(c, &mut inputs),
+            }
+        }
+
+        if !self.is_window_active(window_id) {
+            return Err(HookError::InjectionFailed("Window changed before injection".into()));
+        }
+
+        unsafe {
+            let result = SendInput(
+                &inputs,
+                std::mem::size_of::<INPUT>() as i32,
+            );
+            if result as usize != inputs.len() {
+                return Err(HookError::InjectionFailed(
+                    format!("SendInput sent {} of {} events", result, inputs.len())
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -436,8 +473,6 @@ impl Drop for WindowsHook {
 // Static storage for hook callback
 #[cfg(target_os = "windows")]
 static HOOK_SENDER: OnceLock<Mutex<Option<Sender<HookEvent>>>> = OnceLock::new();
-#[cfg(target_os = "windows")]
-static HOOK_LOG_KEYSTROKES: OnceLock<AtomicBool> = OnceLock::new();
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -481,12 +516,6 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
                 modifiers,
                 window_id,
             };
-
-            if let Some(log_keystrokes) = HOOK_LOG_KEYSTROKES.get() {
-                if log_keystrokes.load(Ordering::SeqCst) {
-                    tracing::debug!("Key: {:?}", hook_event);
-                }
-            }
 
             if let Some(mutex) = HOOK_SENDER.get() {
                 if let Ok(guard) = mutex.lock() {

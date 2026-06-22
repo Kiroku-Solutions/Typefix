@@ -31,7 +31,7 @@ impl StaticErrorMap {
         Self {
             inner: Arc::new(RwLock::new(ErrorMapInner {
                 language: language.to_string(),
-                user_errors: lru::LruCache::new(std::num::NonZeroUsize::new(1000).unwrap()),
+                user_errors: lru::LruCache::new(std::num::NonZeroUsize::new(10_000).unwrap()),
             })),
         }
     }
@@ -50,7 +50,9 @@ impl StaticErrorMap {
             let mut inner = map.inner.write();
             for (typo, correction) in errors {
                 if let Some(corr_str) = correction.as_str() {
-                    inner.user_errors.put(typo.to_lowercase(), corr_str.to_string());
+                    if typo.chars().count() <= 50 && corr_str.chars().count() <= 50 {
+                        inner.user_errors.put(typo.to_lowercase(), corr_str.to_string());
+                    }
                 }
             }
         }
@@ -82,6 +84,10 @@ impl StaticErrorMap {
         let typo_lower = typo.to_lowercase();
         let correction_lower = correction.to_lowercase();
 
+        if typo_lower.chars().count() > 50 || correction_lower.chars().count() > 50 {
+            return;
+        }
+
         // Don't learn from itself
         if typo_lower == correction_lower {
             return;
@@ -102,8 +108,10 @@ impl StaticErrorMap {
     /// Insert a static error correction
     pub fn insert_static(&self, typo: &str, correction: &str) {
         // Used in tests. In production this does nothing.
-        let mut inner = self.inner.write();
-        inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
+        if typo.chars().count() <= 50 && correction.chars().count() <= 50 {
+            let mut inner = self.inner.write();
+            inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
+        }
     }
 
     /// Check if a word is a known typo
@@ -114,10 +122,12 @@ impl StaticErrorMap {
         STATIC_ERRORS.contains_key(&lookup_key) || inner.user_errors.contains(&word_lower)
     }
 
+    /// Default frequency for static/user typos
+    pub const DEFAULT_TYPO_FREQ: u64 = 1000;
+
     /// Get frequency of a typo
     pub fn get_frequency(&self, _typo: &str) -> u64 {
-        // Not needed for PHF anymore.
-        1000
+        Self::DEFAULT_TYPO_FREQ
     }
 
     /// Get all known typos
@@ -167,7 +177,9 @@ impl StaticErrorMap {
 
         let mut inner = self.inner.write();
         for (typo, correction) in errors {
-            inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
+            if typo.chars().count() <= 50 && correction.chars().count() <= 50 {
+                inner.user_errors.put(typo.to_lowercase(), correction.to_lowercase());
+            }
         }
 
         Ok(())

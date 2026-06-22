@@ -54,10 +54,12 @@ use std::sync::Arc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Global engine state - initialized once, never modified after
+#[cfg(not(target_arch = "wasm32"))]
 static ENGINE_STATE: Lazy<Arc<RwLock<EngineState>>> =
     Lazy::new(|| Arc::new(RwLock::new(EngineState::default())));
 
 /// Engine state container
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Default)]
 pub struct EngineState {
     /// Current active language
@@ -71,6 +73,7 @@ pub struct EngineState {
 }
 
 /// Initialize the engine with configuration
+#[cfg(not(target_arch = "wasm32"))]
 pub fn init(config: &core::config::Config) -> Result<()> {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
@@ -118,6 +121,7 @@ pub fn init(config: &core::config::Config) -> Result<()> {
 }
 
 /// Load language-specific data (dictionary, stopwords, error map)
+#[cfg(not(target_arch = "wasm32"))]
 fn load_language_data(lang: &str, data_path: &std::path::Path) -> Result<()> {
     let mut state = ENGINE_STATE.write();
 
@@ -162,11 +166,12 @@ fn load_language_data(lang: &str, data_path: &std::path::Path) -> Result<()> {
 }
 
 /// Get current engine state
+#[cfg(not(target_arch = "wasm32"))]
 pub fn get_state() -> Arc<RwLock<EngineState>> {
     Arc::clone(&ENGINE_STATE)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[allow(
     clippy::unwrap_used,
     reason = "test code uses unwrap for concise assertions"

@@ -12,13 +12,15 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Detection result
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DetectionResult {
     /// Detected language (ISO 639-1)
+    #[serde(rename = "code")]
     pub language: String,
     /// Confidence score (0.0-1.0)
     pub confidence: f64,
     /// Scores for all languages
+    #[serde(skip)]
     pub all_scores: HashMap<String, f64>,
 }
 

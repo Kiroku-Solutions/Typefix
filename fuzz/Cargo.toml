@@ -1,0 +1,18 @@
+[package]
+name = "typefix-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+typefix-wasm-core = { path = ".." }
+
+[[bin]]
+name = "pipeline_fuzz"
+path = "fuzz_targets/pipeline_fuzz.rs"
+test = false
+doc = false

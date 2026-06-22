@@ -73,31 +73,7 @@ impl TypeFixWeb {
     #[wasm_bindgen(js_name = pushChar)]
     pub fn push_char(&self, ch: char) -> Option<String> {
         if let Some(result) = self.pipeline.push(ch) {
-            // We can return the correction result as JSON
-            // Result is a struct, we could define a JS representation or just serialize it
-            // For simplicity, we return JSON string.
-            // Wait, pipeline.push() returns `PipelineResult` which has original, corrected, detected_language.
-            // Let's manually construct a JSON string or use serde.
-            let mut json = String::new();
-            json.push_str("{");
-            json.push_str(&format!("\"original\": \"{}\"", result.original));
-            
-            if let Some(corrected) = result.corrected {
-                json.push_str(&format!(", \"corrected\": \"{}\"", corrected));
-            } else {
-                json.push_str(", \"corrected\": null");
-            }
-
-            if let Some(lang) = result.detected_language {
-                json.push_str(&format!(
-                    ", \"detected_language\": {{\"code\": \"{}\", \"confidence\": {}}}",
-                    lang.language, lang.confidence
-                ));
-            } else {
-                json.push_str(", \"detected_language\": null");
-            }
-            json.push_str("}");
-            return Some(json);
+            return serde_json::to_string(&result).ok();
         }
         None
     }
@@ -106,37 +82,42 @@ impl TypeFixWeb {
     /// Returns a JSON array of PipelineEvents
     #[wasm_bindgen(js_name = processString)]
     pub fn process_string(&self, text: &str) -> String {
-        let results = self.pipeline.process_string(text);
+        let text = if text.len() > 50_000 {
+            &text[..50_000]
+        } else {
+            text
+        };
         
-        let mut json = String::new();
-        json.push('[');
+        let start_time = js_sys::Date::now();
+        let mut results = Vec::new();
         
-        for (i, result) in results.iter().enumerate() {
-            if i > 0 {
-                json.push_str(", ");
+        for ch in text.chars() {
+            if js_sys::Date::now() - start_time > 100.0 {
+                break; // 100ms timeout exceeded
             }
-            json.push('{');
-            json.push_str(&format!("\"original\": \"{}\"", result.original));
-            
-            if let Some(corrected) = &result.corrected {
-                json.push_str(&format!(", \"corrected\": \"{}\"", corrected));
-            } else {
-                json.push_str(", \"corrected\": null");
+            if let Some(result) = self.pipeline.push(ch) {
+                results.push(result);
             }
-
-            if let Some(lang) = &result.detected_language {
-                json.push_str(&format!(
-                    ", \"detected_language\": {{\"code\": \"{}\", \"confidence\": {}}}",
-                    lang.language, lang.confidence
-                ));
-            } else {
-                json.push_str(", \"detected_language\": null");
-            }
-            json.push('}');
         }
         
-        json.push(']');
-        json
+        if js_sys::Date::now() - start_time <= 100.0 {
+            let remaining = self.pipeline.buffer_contents();
+            if !remaining.is_empty() {
+                let result = self.pipeline.get_suggestions(&remaining);
+                let corrected = if !result.is_empty() {
+                    Some(result[0].word.clone())
+                } else {
+                    None
+                };
+                results.push(crate::pipeline::PipelineResult {
+                    original: remaining,
+                    corrected,
+                    detected_language: None,
+                });
+            }
+        }
+        
+        serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string())
     }
 
     /// Clear the internal buffer

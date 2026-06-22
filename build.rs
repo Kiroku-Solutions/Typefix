@@ -17,6 +17,24 @@ fn encode_accents(s: &str) -> String {
     res
 }
 
+fn strip_accents(s: &str) -> String {
+    let mut res = String::with_capacity(s.len());
+    for c in s.chars() {
+        let stripped = match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            _ => c,
+        };
+        res.push(stripped);
+    }
+    res
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=data/errors");
 
@@ -39,13 +57,20 @@ fn main() {
                 let fst_path = format!("data/dictionaries/{}.fst", language);
                 
                 let fst_map = if Path::new(&fst_path).exists() {
-                    let file = fs::File::open(&fst_path).unwrap();
-                    let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
-                    Some(fst::Map::new(mmap).unwrap())
+                    let mut data = fs::read(&fst_path).unwrap();
+                    if data.len() >= 4 && &data[0..4] == b"TFX1" {
+                        data = data[4..].to_vec();
+                    }
+                    Some(fst::Map::new(data).unwrap())
                 } else {
                     None
                 };
 
+                // Enforce JSON file size limit (10 MB) to prevent OOM
+                if fs::metadata(&path).unwrap().len() > 10_000_000 {
+                    panic!("JSON error map is too large: {}", path.display());
+                }
+                
                 // Parse the JSON
                 let content = fs::read_to_string(&path).unwrap();
                 
@@ -61,8 +86,12 @@ fn main() {
                             if let Some(ref fst) = fst_map {
                                 let encoded = encode_accents(&typo_lower);
                                 if fst.contains_key(&encoded) {
-                                    println!("cargo:warning=Static error key '{}' conflicts with valid dictionary word in {}.fst. It will be excluded.", typo, language);
-                                    continue;
+                                    if strip_accents(&typo_lower) == strip_accents(&correction_str.to_lowercase()) {
+                                        // Allow accent-only corrections to pass through
+                                    } else {
+                                        println!("cargo:warning=Static error key '{}' conflicts with valid dictionary word in {}.fst. It will be excluded.", typo, language);
+                                        continue;
+                                    }
                                 }
                             }
                             

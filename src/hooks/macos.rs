@@ -37,8 +37,6 @@ pub struct MacOSHook {
 
 #[cfg(target_os = "macos")]
 static EVENT_SENDER: OnceLock<Arc<Mutex<Option<Sender<HookEvent>>>>> = OnceLock::new();
-#[cfg(target_os = "macos")]
-static LOG_KEYSTROKES: OnceLock<AtomicBool> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 impl MacOSHook {
@@ -167,9 +165,6 @@ impl KeyboardHook for MacOSHook {
                 *guard = Some(tx);
             }
         }
-
-        LOG_KEYSTROKES.get_or_init(|| AtomicBool::new(self.config.log_keystrokes));
-
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
 
@@ -213,10 +208,8 @@ impl KeyboardHook for MacOSHook {
                                     event: KeyEvent::Char(ch),
                                     timestamp,
                                     modifiers: mods,
+                                    window_id: 0,
                                 };
-                                if LOG_KEYSTROKES.get().map(|f| f.load(Ordering::SeqCst)).unwrap_or(false) {
-                                    tracing::debug!("Key: {:?}", hook_event);
-                                }
                                 if let Some(global_sender) = EVENT_SENDER.get() {
                                     if let Ok(guard) = global_sender.lock() {
                                         if let Some(tx) = &*guard {
@@ -229,6 +222,7 @@ impl KeyboardHook for MacOSHook {
                                     event: KeyEvent::Special(special),
                                     timestamp,
                                     modifiers: mods,
+                                    window_id: 0,
                                 };
                                 if let Some(global_sender) = EVENT_SENDER.get() {
                                     if let Ok(guard) = global_sender.lock() {

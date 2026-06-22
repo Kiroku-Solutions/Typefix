@@ -128,7 +128,6 @@ impl KeyboardHook for LinuxHook {
 
         let running = Arc::clone(&self.running);
         let stop_flag = Arc::clone(&self.stop_flag);
-        let log_keystrokes = self.config.log_keystrokes;
         let tx_clone = Arc::clone(&self.sender);
 
         // Spawn hook thread
@@ -174,40 +173,33 @@ impl KeyboardHook for LinuxHook {
                 while !stop_flag.load(Ordering::SeqCst) {
                     // Poll for events
                     if let Ok(Some(event)) = conn.poll_for_event() {
-                        if log_keystrokes {
-                            // Extract response type from UnknownEvent variant;
-                            // other variants don't expose it directly.
-                            let event_type = match &event {
-                                xcb::Event::Unknown(unknown) => unknown.response_type() & 0x7f,
-                                _ => 0,
-                            };
+                        // Extract response type from UnknownEvent variant;
+                        // other variants don't expose it directly.
+                        let event_type = match &event {
+                            xcb::Event::Unknown(unknown) => unknown.response_type() & 0x7f,
+                            _ => 0,
+                        };
 
-                            // KeyPress = 2
-                            if event_type == 2 {
-                                if log_keystrokes {
-                                    tracing::debug!("XCB KeyEvent: {:?}", event);
-                                }
+                        // KeyPress = 2
+                        if event_type == 2 {
+                            // Simplified dummy mapping for MVP since full XKB translation
+                            // is outside the scope of this file.
+                            let timestamp = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as u64)
+                                .unwrap_or(0);
                                 
-                                // Simplified dummy mapping for MVP since full XKB translation
-                                // is outside the scope of this file.
-                                let timestamp = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_millis() as u64)
-                                    .unwrap_or(0);
-                                    
-                                let hook_event = HookEvent {
-                                    event: KeyEvent::Char('a'), // Dummy character
-                                    timestamp,
-                                    modifiers: Modifiers::default(),
-                                };
-                                
-                                if let Ok(guard) = tx_clone.lock() {
-                                    if let Some(tx) = &*guard {
-                                        let _ = tx.send(hook_event);
-                                    }
+                            let hook_event = HookEvent {
+                                event: KeyEvent::Char('a'), // Dummy character
+                                timestamp,
+                                modifiers: Modifiers::default(),
+                                window_id: 0,
+                            };
+                            
+                            if let Ok(guard) = tx_clone.lock() {
+                                if let Some(tx) = &*guard {
+                                    let _ = tx.send(hook_event);
                                 }
-                            } else if event_type == 3 && log_keystrokes {
-                                tracing::debug!("XCB KeyRelease: {:?}", event);
                             }
                         }
                     }

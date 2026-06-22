@@ -243,7 +243,7 @@ impl TypeFixPipeline {
 }
 
 /// Result of processing a word
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct PipelineResult {
     /// The original word
     pub original: String,
@@ -265,7 +265,7 @@ impl TypeFixPipeline {
             for (w, f) in entries {
                 builder.insert(w.as_bytes(), f).unwrap();
             }
-            crate::core::Dict::from_bytes(builder.into_inner().unwrap()).unwrap()
+            crate::core::Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap()
         }
 
         // Add test dictionaries

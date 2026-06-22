@@ -16,6 +16,12 @@ use typefix::hooks::platform::{KeyEvent, SpecialKey};
 use typefix::pipeline::TypeFixPipeline;
 
 fn main() -> Result<()> {
+    // Fail-fast on panic to prevent undefined behavior
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("FATAL PANIC: {}", info);
+        std::process::abort();
+    }));
+
     // Parse CLI arguments
     let matches = clap::Command::new("typefix")
         .version(env!("CARGO_PKG_VERSION"))
@@ -142,7 +148,6 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
 
     let hook_config = typefix::hooks::platform::HookConfig {
         enabled: config.hooks.keyboard_enabled,
-        log_keystrokes: config.hooks.log_keystrokes,
         mode: match config.hooks.mode {
             typefix::core::config::HookMode::System => {
                 typefix::hooks::platform::HookMode::System
@@ -229,14 +234,9 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
                                 corrected
                             );
                             let backspaces = result.original.chars().count() + 1;
-                            for _ in 0..backspaces {
-                                if let Err(e) = hook.send_text("\x08") {
-                                    tracing::error!("Failed to send backspace: {}", e);
-                                }
-                            }
                             let corrected_with_delimiter = format!("{}{}", corrected, ch);
-                            if let Err(e) = hook.send_text(&corrected_with_delimiter) {
-                                tracing::error!("Failed to send correction text: {}", e);
+                            if let Err(e) = hook.send_correction_atomic(backspaces, &corrected_with_delimiter, current_window_id) {
+                                tracing::error!("Failed to inject correction atomically: {}", e);
                             }
                         }
                     }
@@ -454,7 +454,7 @@ fn run_benchmarks() -> Result<()> {
     for (w, f) in &entries {
         builder.insert(w.as_bytes(), *f).unwrap();
     }
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     let insert_time = start.elapsed();
 
     let start = Instant::now();

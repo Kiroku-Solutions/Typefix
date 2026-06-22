@@ -185,8 +185,6 @@ pub struct HooksConfig {
     pub mode: HookMode,
     /// Target application (for application mode)
     pub target_app: Option<String>,
-    /// Enable logging of all keystrokes
-    pub log_keystrokes: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -209,7 +207,6 @@ impl Default for HooksConfig {
             keyboard_enabled: true,
             mode: HookMode::System,
             target_app: None,
-            log_keystrokes: false,
         }
     }
 }
@@ -381,8 +378,7 @@ impl Config {
   "hooks": {
     "keyboard_enabled": true,
     "mode": "system",
-    "target_app": null,
-    "log_keystrokes": false
+    "target_app": null
   }
 }"#
     }

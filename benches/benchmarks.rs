@@ -9,7 +9,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut builder = fst::MapBuilder::memory();
             builder.insert("benchmark", 1000).unwrap();
-            let _dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+            let _dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         });
     });
 
@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut builder = fst::MapBuilder::memory();
         builder.insert("hello", 1000).unwrap();
         builder.insert("world", 800).unwrap();
-        let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+        let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
         b.iter(|| dict.search(black_box("hello")));
     });
 

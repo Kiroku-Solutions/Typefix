@@ -462,7 +462,6 @@ fn test_boundary_keyboard_rollover_10_keys() {
 fn test_boundary_keyboard_rollover_hook_15_keys() {
     let mut hook = MockHook::new(HookConfig {
         enabled: true,
-        log_keystrokes: false,
         mode: HookMode::System,
     });
 
@@ -680,7 +679,6 @@ fn test_boundary_ime_commit_to_cjk() {
 fn test_boundary_rapid_typing_hook_no_event_loss() {
     let mut hook = MockHook::new(HookConfig {
         enabled: true,
-        log_keystrokes: false,
         mode: HookMode::System,
     });
     hook.start().expect("hook should start");
@@ -900,7 +898,7 @@ fn build_test_engine_with_dict() -> CorrectionEngine {
     for (word, freq) in words {
         builder.insert(word, freq).unwrap();
     }
-    let dict = Dict::from_bytes(builder.into_inner().unwrap()).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
     engine.add_dictionary("en", Arc::new(dict));
 
     let error_map = StaticErrorMap::new("en");
