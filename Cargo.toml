@@ -70,7 +70,7 @@ getrandom = { version = "0.2", features = ["js"] }
 console_error_panic_hook = "0.1.7"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
