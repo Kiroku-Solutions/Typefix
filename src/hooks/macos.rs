@@ -144,7 +144,7 @@ impl KeyboardHook for MacOSHook {
             return Err(HookError::AlreadyRunning);
         }
 
-        let tx = self.sender.lock().unwrap().clone().ok_or(HookError::NotRunning)?;
+        let tx = self.sender.lock().map_err(|_| HookError::PlatformError("Mutex poisoned".to_string()))?.clone().ok_or(HookError::NotRunning)?;
 
         // Store sender globally for event callback
         EVENT_SENDER.get_or_init(|| Arc::new(Mutex::new(None)));

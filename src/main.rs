@@ -273,14 +273,15 @@ fn run_daemon(matches: clap::ArgMatches) -> Result<()> {
             }
         }
     }
-    let icon = tray_icon::Icon::from_rgba(rgba, width, height).unwrap();
+    let icon = tray_icon::Icon::from_rgba(rgba, width, height)
+        .map_err(|e| anyhow::anyhow!("Failed to create icon: {:?}", e))?;
 
     let _tray_icon = tray_icon::TrayIconBuilder::new()
         .with_menu(Box::new(tray_menu))
         .with_tooltip("TypeFix")
         .with_icon(icon)
         .build()
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("Failed to build tray icon: {:?}", e))?;
 
     let menu_channel = tray_icon::menu::MenuEvent::receiver();
 
@@ -452,9 +453,9 @@ fn run_benchmarks() -> Result<()> {
     let start = Instant::now();
     let mut builder = fst::MapBuilder::memory();
     for (w, f) in &entries {
-        builder.insert(w.as_bytes(), *f).unwrap();
+        builder.insert(w.as_bytes(), *f).map_err(|e| anyhow::anyhow!("FST insert error: {:?}", e))?;
     }
-    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap();
+    let dict = Dict::from_bytes(typefix::core::dict::wrap_fst_bytes(&builder.into_inner().map_err(|e| anyhow::anyhow!("FST build error: {:?}", e))?)).map_err(|e| anyhow::anyhow!("Dict error: {}", e))?;
     let insert_time = start.elapsed();
 
     let start = Instant::now();
@@ -482,8 +483,8 @@ fn run_benchmarks() -> Result<()> {
 }
 
 fn run_build_dict(matches: &clap::ArgMatches) -> Result<()> {
-    let input = matches.get_one::<String>("input").unwrap();
-    let output = matches.get_one::<String>("output").unwrap();
+    let input = matches.get_one::<String>("input").context("Missing input argument")?;
+    let output = matches.get_one::<String>("output").context("Missing output argument")?;
     
     let input_path = std::path::Path::new(input);
     let output_path = std::path::Path::new(output);

@@ -92,7 +92,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 serial_test = "3"
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+wasm-opt = true
 
 [profile.release]
 opt-level = 3

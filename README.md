@@ -15,7 +15,7 @@
 - **Zero-latency correction**: O(1) lookup for known typos, O(N × match_cost) for fuzzy FST search
 - **Dynamic language detection**: Bayesian inference with rolling window
 - **Memory efficient**: < 10MB RAM footprint (target)
-- **Cross-platform**: Windows, Linux, macOS support
+- **Cross-platform**: Windows, Linux (macOS is Experimental)
 - **Fail-safe design**: Graceful degradation on any error
 - **No garbage collection**: 100% Rust, zero allocations in hot path
 

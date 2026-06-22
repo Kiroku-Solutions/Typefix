@@ -55,6 +55,27 @@ For high-sensitivity environments (PHI, PII, classified data), see:
 
 On Windows, the engine uses low-level keyboard hooks (`WH_KEYBOARD_LL`), which require no special elevation but log a benign security event when installed. On Linux, it uses X11 or evdev. On macOS, it requires Accessibility permission in System Preferences.
 
+## Threat Model
+
+### Assets Protected
+- **Keystroke Integrity**: Ensure keystrokes are processed securely within memory.
+- **Host System Stability**: A crash in the engine must not lock the host's keyboard or crash the OS.
+
+### Potential Threats & Mitigations
+- **Denial of Service (DoS)** via massive inputs or payloads:
+  - *Mitigation*: 10MB hard limits on all JSON parsing (WASM included).
+  - *Mitigation*: Ring buffers for keystrokes capped at 64 chars to prevent memory exhaustion.
+- **Malicious Window Injection** (injecting keystrokes to the wrong window):
+  - *Mitigation*: Double-verification of active window ID before and after processing using atomic operations.
+- **Memory Exploits**:
+  - *Mitigation*: No dynamic allocations in the hot path. Safe Rust guarantees prevent use-after-free and data races.
+- **Data Exfiltration**:
+  - *Mitigation*: Zero network I/O. The engine has no HTTP or telemetry capabilities.
+
+### Out of Scope
+- Protection against kernel-level keyloggers or rootkits.
+- Maliciously crafted dictionaries loaded locally by the user (user is responsible for local file integrity).
+
 ## Security Updates
 
 Security patches are released as soon as possible after confirmation. Critical fixes may result in a patch release outside the normal release cadence.
