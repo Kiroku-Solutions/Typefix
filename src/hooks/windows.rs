@@ -42,6 +42,7 @@ type HookThread = Arc<Mutex<Option<thread::JoinHandle<()>>>>;
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 pub struct WindowsHook {
+    #[allow(dead_code)]
     config: HookConfig,
     running: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
@@ -163,6 +164,10 @@ fn send_keystrokes(text: &str) -> Result<(), HookError> {
             '\x08' => send_backspace(&mut inputs),
             _ => send_char(c, &mut inputs),
         }
+    }
+
+    if inputs.is_empty() {
+        return Ok(());
     }
 
     unsafe {
@@ -445,6 +450,10 @@ impl KeyboardHook for WindowsHook {
 
         if !self.is_window_active(window_id) {
             return Err(HookError::InjectionFailed("Window changed before injection".into()));
+        }
+
+        if inputs.is_empty() {
+            return Ok(());
         }
 
         unsafe {

@@ -57,63 +57,51 @@ impl MacOSHook {
     /// Convert CGKeyCode to character
     fn keycode_to_char(keycode: CGKeyCode, modifiers: &Modifiers) -> Option<char> {
         unsafe {
-            let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+            let _source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
 
-            // Get the current keyboard layout
-            let mut actual_string_length: usize = 0;
-            let mut glyph = [0u16; 4];
-
-            // Use CGEventKeyboardSetUnicodeString
             // Note: This is a simplified approach - full implementation would need
-            // to properly handle keyboard layout and dead keys
-            let result =
-                core_graphics::sys::CGEventKeyboardSetUnicodeString(ptr::null(), 0, ptr::null());
-
-            if result {
-                // Fallback: use keycode-based mapping
-                let ch = match keycode as u16 {
-                    // Letters
-                    0x00..=0x25 => {
-                        let letter = (b'A' + keycode as u8) as char;
-                        if modifiers.shift ^ modifiers.caps_lock {
-                            letter
-                        } else {
-                            letter.to_ascii_lowercase()
-                        }
+            // to properly handle keyboard layout and dead keys.
+            // Using keycode-based mapping directly as a fallback.
+            let ch = match keycode as u16 {
+                // Letters
+                0x00..=0x25 => {
+                    let letter = (b'A' + keycode as u8) as char;
+                    if modifiers.shift ^ modifiers.caps_lock {
+                        letter
+                    } else {
+                        letter.to_ascii_lowercase()
                     }
-                    // Numbers
-                    0x1D..=0x26 => {
-                        let num = (b'1' + (keycode as u8 - 0x1D)) as char;
-                        if modifiers.shift {
-                            match keycode as u8 {
-                                0x1D => '!',
-                                0x1E => '@',
-                                0x1F => '#',
-                                0x20 => '$',
-                                0x21 => '%',
-                                0x22 => '^',
-                                0x23 => '&',
-                                0x24 => '*',
-                                0x25 => '(',
-                                0x26 => ')',
-                                _ => num,
-                            }
-                        } else {
-                            num
+                }
+                // Numbers
+                0x1D..=0x26 => {
+                    let num = (b'1' + (keycode as u8 - 0x1D)) as char;
+                    if modifiers.shift {
+                        match keycode as u8 {
+                            0x1D => '!',
+                            0x1E => '@',
+                            0x1F => '#',
+                            0x20 => '$',
+                            0x21 => '%',
+                            0x22 => '^',
+                            0x23 => '&',
+                            0x24 => '*',
+                            0x25 => '(',
+                            0x26 => ')',
+                            _ => num,
                         }
+                    } else {
+                        num
                     }
-                    // Space
-                    0x31 => ' ',
-                    // Return
-                    0x24 => return Some('\n'),
-                    // Tab
-                    0x30 => return Some('\t'),
-                    _ => return None,
-                };
-                Some(ch)
-            } else {
-                None
-            }
+                }
+                // Space
+                0x31 => ' ',
+                // Return
+                0x24 => return Some('\n'),
+                // Tab
+                0x30 => return Some('\t'),
+                _ => return None,
+            };
+            Some(ch)
         }
     }
 

@@ -47,6 +47,9 @@ impl TypeFixWeb {
     /// Load stopwords from a JSON string
     #[wasm_bindgen(js_name = loadStopwords)]
     pub fn load_stopwords(&self, lang: &str, json_str: &str) -> Result<(), JsValue> {
+        if json_str.len() > 10 * 1024 * 1024 {
+            return Err(JsValue::from_str("JSON size exceeds 10MB limit"));
+        }
         let stopwords_vec: Vec<String> = serde_json::from_str(json_str)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse stopwords JSON: {}", e)))?;
         
@@ -62,6 +65,9 @@ impl TypeFixWeb {
     /// Load static errors from a JSON string
     #[wasm_bindgen(js_name = loadStaticErrors)]
     pub fn load_static_errors(&self, lang: &str, json_str: &str) -> Result<(), JsValue> {
+        if json_str.len() > 10 * 1024 * 1024 {
+            return Err(JsValue::from_str("JSON size exceeds 10MB limit"));
+        }
         let map = StaticErrorMap::from_json_str(lang, json_str)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse static errors JSON: {}", e)))?;
         self.pipeline.add_error_map(lang, Arc::new(map));

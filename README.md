@@ -12,7 +12,7 @@
 
 ## Features
 
-- **Zero-latency correction**: O(1) lookup for known typos, O(m*n) for Damerau-Levenshtein
+- **Zero-latency correction**: O(1) lookup for known typos, O(N × match_cost) for fuzzy FST search
 - **Dynamic language detection**: Bayesian inference with rolling window
 - **Memory efficient**: < 10MB RAM footprint (target)
 - **Cross-platform**: Windows, Linux, macOS support

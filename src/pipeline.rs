@@ -260,12 +260,14 @@ impl TypeFixPipeline {
 
         fn build_dict(words: &[(&str, u64)]) -> crate::core::Dict {
             let mut entries = words.to_vec();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            entries.sort_by(|a, b| a.0.cmp(b.0));
             let mut builder = fst::MapBuilder::memory();
             for (w, f) in entries {
-                builder.insert(w.as_bytes(), f).unwrap();
+                let _ = builder.insert(w.as_bytes(), f);
             }
-            crate::core::Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&builder.into_inner().unwrap())).unwrap()
+            let inner = builder.into_inner().unwrap_or_else(|_| Vec::new());
+            crate::core::Dict::from_bytes(crate::core::dict::wrap_fst_bytes(&inner))
+                .unwrap_or_else(|_| std::process::abort())
         }
 
         // Add test dictionaries

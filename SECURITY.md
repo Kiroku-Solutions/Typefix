@@ -15,7 +15,7 @@ The Kiroku Solutions team takes security seriously. We appreciate your efforts t
 
 Report privately via:
 
-- **Email**: security@kiroku.solutions
+- **Email**: contact@kirokusolutions.com
 - **GitHub Security Advisories**: Use the "Report a vulnerability" button on the Security tab of the repository
 
 Include in your report:

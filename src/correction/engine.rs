@@ -116,7 +116,9 @@ impl CorrectionEngine {
             detector: RwLock::new(Arc::new(LanguageDetector::new(
                 crate::language::detector::DetectorConfig::default(),
             ))),
-            fuzzy_cache: RwLock::new(lru::LruCache::new(std::num::NonZeroUsize::new(1000).unwrap())),
+            fuzzy_cache: RwLock::new(lru::LruCache::new(unsafe {
+                std::num::NonZeroUsize::new_unchecked(1000)
+            })),
         }
     }
 
@@ -177,7 +179,7 @@ impl CorrectionEngine {
 
         let current_lang = self.detector.read().get_language();
         let is_uppercase = trimmed_word.chars().all(|c| c.is_uppercase());
-        let is_titlecase = !is_uppercase && trimmed_word.chars().next().map_or(false, |c| c.is_uppercase());
+        let is_titlecase = !is_uppercase && trimmed_word.chars().next().is_some_and(|c| c.is_uppercase());
         let word_lower = trimmed_word.to_lowercase();
         let word_normalized = if self.config.case_sensitive {
             trimmed_word.to_string()
@@ -262,7 +264,7 @@ impl CorrectionEngine {
 
             if !candidates.is_empty() {
                 let best_match = &candidates[0];
-                let mut final_correction = best_match.word.clone();
+                let final_correction = best_match.word.clone();
                 let corrected_with_fix = format!("{}{}{}", prefix, final_correction, suffix);
 
                 let mut res = CorrectionResult {

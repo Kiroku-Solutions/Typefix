@@ -31,7 +31,7 @@ impl StaticErrorMap {
         Self {
             inner: Arc::new(RwLock::new(ErrorMapInner {
                 language: language.to_string(),
-                user_errors: lru::LruCache::new(std::num::NonZeroUsize::new(10_000).unwrap()),
+                user_errors: lru::LruCache::new(unsafe { std::num::NonZeroUsize::new_unchecked(10_000) }),
             })),
         }
     }
@@ -137,7 +137,7 @@ impl StaticErrorMap {
         let mut result: Vec<(String, String)> = STATIC_ERRORS
             .entries()
             .filter(|(k, _)| k.starts_with(&prefix))
-            .map(|(k, v)| (k.strip_prefix(&prefix).unwrap().to_string(), v.to_string()))
+            .map(|(k, v)| (k.strip_prefix(&prefix).unwrap_or(k).to_string(), v.to_string()))
             .collect();
 
         // Add user errors (may override static)

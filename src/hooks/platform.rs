@@ -153,6 +153,9 @@ pub trait KeyboardHook: Send {
         for _ in 0..backspaces {
             self.send_text("\x08")?;
         }
+        if !self.is_window_active(window_id) {
+            return Err(HookError::InjectionFailed("Window changed during backspace".into()));
+        }
         self.send_text(text)
     }
 }
