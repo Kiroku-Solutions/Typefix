@@ -2449,7 +2449,7 @@ dependencies = [
  "serial_test",
  "sys-locale",
  "tao",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
  "tray-icon",
