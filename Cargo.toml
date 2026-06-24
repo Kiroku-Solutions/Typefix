@@ -110,7 +110,7 @@ panic = "unwind"
 opt-level = 0
 
 [build-dependencies]
-phf_codegen = "0.13.1"
+phf_codegen = "0.14.0"
 serde_json = "1.0"
 fst = "0.4.7"
 memmap2 = "0.9.10"
